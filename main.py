@@ -851,7 +851,10 @@ def webhook():
                         )
         except KeyError:
             print("ℹ️ No message found, skipping...")
+            return "OK", 200
+        
         return "OK", 200
+
 
 
 @app.route("/", methods=["GET"])

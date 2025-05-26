@@ -1,4 +1,3 @@
-# flows/car_fumigation.py
 from services.twilio_client import send_whatsapp_message
 from sessions import car_fumigation_data
 
@@ -6,6 +5,7 @@ def run_flow(to):
     """
     Initiates the car fumigation service quotation flow.
     """
+    # Always set the session for this user at the very start!
     car_fumigation_data[to] = {"stage": "pest_selection"}
     menu_text = (
         "🚗 *Car Fumigation Service*\n\n"
@@ -32,21 +32,21 @@ def handle_response(to, text):
             "3": "Lizards",
             "4": "Multiple pests"
         }
-        
         pest = pest_mapping.get(text.strip())
 
         if pest:
             state["pest"] = pest
             state["stage"] = "vehicle_type_selection"
-            send_whatsapp_message(to,
-                "✅ Pest selected: {}\n\n"
+            send_whatsapp_message(
+                to,
+                f"✅ Pest selected: {pest}\n\n"
                 "Now, what's your vehicle type?\n"
                 "1. Sedan/Hatchback\n"
                 "2. SUV\n"
                 "3. MPV\n"
                 "4. Vans/Lorries\n"
                 "5. Ultra Luxury/Supercars (Ferrari, Lamborghini, etc)\n"
-                "6. Others (Please specify)".format(pest)
+                "6. Others (Please specify)"
             )
         elif text.strip() == "5":
             state["stage"] = "custom_pest_entry"
@@ -57,7 +57,8 @@ def handle_response(to, text):
     elif state.get("stage") == "custom_pest_entry":
         state["pest"] = text.strip()
         state["stage"] = "vehicle_type_selection"
-        send_whatsapp_message(to,
+        send_whatsapp_message(
+            to,
             f"✅ Pest noted: {state['pest']}\n\n"
             "Now, what's your vehicle type?\n"
             "1. Sedan/Hatchback\n"
@@ -76,14 +77,14 @@ def handle_response(to, text):
             "4": "Vans/Lorries",
             "5": "Ultra Luxury/Supercar"
         }
-        
         vehicle = vehicle_mapping.get(text.strip())
-        
+
         if vehicle:
             state["vehicle"] = vehicle
             state["stage"] = "location_selection"
-            send_whatsapp_message(to,
-                "✅ Vehicle type selected: {}\n\n"
+            send_whatsapp_message(
+                to,
+                f"✅ Vehicle type selected: {vehicle}\n\n"
                 "Next, please select your service location:\n"
                 "1. North (Woodlands, Yishun, etc.)\n"
                 "2. North-East (Hougang, Sengkang, etc.)\n"
@@ -92,7 +93,7 @@ def handle_response(to, text):
                 "5. West (Jurong, Clementi, etc.)\n"
                 "6. South (Bukit Merah, Queenstown)\n"
                 "7. Sentosa & Restricted Areas\n"
-                "8. Others (Please specify)".format(vehicle)
+                "8. Others (Please specify)"
             )
         elif text.strip() == "6":
             state["stage"] = "custom_vehicle_entry"
@@ -103,7 +104,8 @@ def handle_response(to, text):
     elif state.get("stage") == "custom_vehicle_entry":
         state["vehicle"] = text.strip()
         state["stage"] = "location_selection"
-        send_whatsapp_message(to,
+        send_whatsapp_message(
+            to,
             f"✅ Vehicle type noted: {state['vehicle']}\n\n"
             "Please select your service location:\n"
             "1. North\n"
@@ -126,9 +128,8 @@ def handle_response(to, text):
             "6": "South",
             "7": "Sentosa & Restricted Areas"
         }
-        
         location = location_mapping.get(text.strip())
-        
+
         if location:
             state["location"] = location
             state["stage"] = "confirmation"
@@ -146,7 +147,8 @@ def handle_response(to, text):
 
     elif state.get("stage") == "confirmation":
         if text.strip().lower() == "confirm":
-            send_whatsapp_message(to,
+            send_whatsapp_message(
+                to,
                 "🎉 Thank you! We've received your details.\n"
                 "Our team will reach out shortly with your quotation and scheduling options."
             )

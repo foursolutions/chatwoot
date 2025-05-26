@@ -141,3 +141,4 @@ def send_summary(to, state):
     summary += "Reply 'confirm' to submit or 'restart' to begin again."
     
     send_whatsapp_message(to, summary)
+

@@ -1,35 +1,52 @@
+# dispatcher.py
 from flows import bedbug, car_fumigation, mold
-from sessions import bedbug_data, car_fumigation_data, mold_removal_data
-from services.twilio_client import send_whatsapp_message
-from utils import normalize_number
+from sessions import live_sessions, bedbug_data, car_fumigation_data, mold_removal_data
+
+MAIN_MENU = (
+    "👋 Welcome to Four Solutions Live Assist!\n"
+    "How can we help you today? Reply with a number:\n"
+    "1. Bedbug Service\n"
+    "2. Car Fumigation\n"
+    "3. Mold Removal\n"
+    "Type 'menu' at any time to return to this menu."
+)
 
 def dispatch_message(request):
-    data = request.form.to_dict() if request.form else request.get_json()
-    sender = normalize_number(data.get("From", "").replace("whatsapp:", ""))
-    message_body = data.get("Body", "").strip()
+    from_number = request.values.get("From")
+    body = request.values.get("Body", "").strip()
 
-    # Route to appropriate flow based on ongoing session
-    if sender in bedbug_data:
-        bedbug.handle_response(sender, message_body)
-    elif sender in car_fumigation_data:
-        car_fumigation.handle_response(sender, message_body)
-    elif sender in mold_removal_data:
-        mold.handle_response(sender, message_body)
+    # Universal "menu" command
+    if body.lower() == "menu":
+        reset_session(from_number)
+        return send_main_menu(from_number)
+
+    # Route if in a known session flow
+    if from_number in bedbug_data:
+        bedbug.handle_response(from_number, body)
+        return "OK"
+    if from_number in car_fumigation_data:
+        car_fumigation.handle_response(from_number, body)
+        return "OK"
+    if from_number in mold_removal_data:
+        mold.handle_response(from_number, body)
+        return "OK"
+
+    # New session or fresh message
+    if body in ["1", "bedbug"]:
+        bedbug.run_flow(from_number)
+    elif body in ["2", "car fumigation", "car"]:
+        car_fumigation.run_flow(from_number)
+    elif body in ["3", "mold", "mold removal"]:
+        mold.run_flow(from_number)
     else:
-        # Start new flows based on keyword triggers
-        lowered_body = message_body.lower()
-        if "bedbug" in lowered_body:
-            bedbug.run_flow(sender)
-        elif "fumigation" in lowered_body or "car" in lowered_body:
-            car_fumigation.run_flow(sender)
-        elif "mold" in lowered_body:
-            mold.run_flow(sender)
-        else:
-            send_whatsapp_message(sender,
-                "👋 Welcome! Please clearly reply:\n"
-                "1. Bedbug\n"
-                "2. Car Fumigation\n"
-                "3. Mold Removal"
-            )
+        send_main_menu(from_number)
+    return "OK"
 
-    return "OK", 200
+def reset_session(from_number):
+    bedbug_data.pop(from_number, None)
+    car_fumigation_data.pop(from_number, None)
+    mold_removal_data.pop(from_number, None)
+
+def send_main_menu(to):
+    from services.twilio_client import send_whatsapp_message
+    send_whatsapp_message(to, MAIN_MENU)

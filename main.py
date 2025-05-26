@@ -74,24 +74,6 @@ def send_template_message(to, template_name, namespace, variables):
                 {
                     "type": "body",
                     "parameters": [{"type": "text", "text": var} for var in variables]
-                },
-                {
-                    "type": "button",
-                    "sub_type": "quick_reply",
-                    "index": "0",
-                    "parameters": []
-                },
-                {
-                    "type": "button",
-                    "sub_type": "quick_reply",
-                    "index": "1",
-                    "parameters": []
-                },
-                {
-                    "type": "button",
-                    "sub_type": "quick_reply",
-                    "index": "2",
-                    "parameters": []
                 }
             ]
         }

@@ -80,8 +80,12 @@ def send_template_message(to, template_name, namespace, variables):
         }
     }
     response = requests.post(url, json=payload, headers=headers)
+
+    # Enhanced Debugging Output
     if response.status_code != 200:
-        print(f"⚠️ Template failed: {response.text}")
+        print("⚠️ Error sending template message:")
+        print("Request payload:", payload)
+        print("Response text:", response.text)
         fallback_message = f"Hi {variables[0]}, how can I help you today?"
         send_text_message(to, fallback_message)
     else:
@@ -156,7 +160,7 @@ def send_main_menu(to, customer_name):
     namespace = "94d66366_9ec1_43a3_a84c_46039bd33ef5"
     template_name = "main_menu"
     send_template_message(to, template_name, namespace, [customer_name])
-    
+
 # -------------------------------
 # Admin Command Handling
 # -------------------------------

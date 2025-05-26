@@ -260,6 +260,10 @@ def webhook():
     elif request.method == "POST":
         if request.is_json:
             data = request.get_json()
+        elif request.content_type.startswith("application/x-www-form-urlencoded"):
+            data = request.form.to_dict()
+            print("⚠️ Received form-encoded data:", data)
+            # Optionally: convert to your usual expected structure
         else:
             print("❌ Unsupported content type:", request.content_type)
             return "Unsupported Media Type", 415

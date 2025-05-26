@@ -53,6 +53,40 @@ def send_text_message(to, message):
     response = requests.post(url, json=payload, headers=headers)
     print(f"✅ Sent WhatsApp text to {to}: {response.text}")
 
+def send_template_message(to, template_name, namespace, variables):
+    url = "https://waba.360dialog.io/v1/messages"
+    headers = {
+        "D360-API-KEY": ACCESS_TOKEN,
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "to": to,
+        "type": "template",
+        "template": {
+            "namespace": namespace,
+            "language": {
+                "policy": "deterministic",
+                "code": "en"
+            },
+            "name": template_name,
+            "components": [
+                {
+                    "type": "body",
+                    "parameters": [
+                        {"type": "text", "text": var} for var in variables
+                    ]
+                }
+            ]
+        }
+    }
+    response = requests.post(url, json=payload, headers=headers)
+    if response.status_code != 200:
+        print(f"⚠️ Template failed: {response.text}")
+        fallback_message = f"Hi {variables[0]}, how can I help you today?"
+        send_text_message(to, fallback_message)
+    else:
+        print(f"✅ Sent template message to {to}: {response.text}")
+
 def send_interactive_message(to, payload):
     """
     Send an interactive WhatsApp message using the 360dialog/Meta API.
@@ -119,56 +153,10 @@ def reset_conversation(to, customer_name):
     send_main_menu(to, customer_name)
 
 def send_main_menu(to, customer_name):
-    tz = pytz.timezone("Asia/Singapore")
-    now = datetime.datetime.now(tz)
-    hour = now.hour
-    if hour < 4:
-        greeting = (
-            "Now it might be too late for the mortal body to be awake, but I am here to help! "
-            "If there's an emergency, please call us!"
-        )
-    elif hour < 8:
-        greeting = (
-            "The human controlling me might not be awake yet, but I am here to help!"
-        )
-    elif hour < 12:
-        greeting = "Good morning!"
-    elif hour < 18:
-        greeting = "Afternoon!"
-    else:
-        greeting = "Evening!"
-
-    welcome_message = (
-        f"{greeting} {customer_name}, thanks for reaching out to Four Solutions! I'm Solvia, your fun and friendly chatbot. "
-        "How may I help you today? (Tap 'Live Human' anytime for immediate support, or choose one of the options below.)"
-    )
-    payload = {
-        "messaging_product": "whatsapp",
-        "recipient_type": "individual",
-        "type": "interactive",
-        "interactive": {
-            "type": "button",
-            "body": {"text": welcome_message},
-            "action": {
-                "buttons": [
-                    {
-                        "type": "reply",
-                        "reply": {"id": "pest_control", "title": "Need help on Pest!"},
-                    },
-                    {
-                        "type": "reply",
-                        "reply": {"id": "mold_removal", "title": "Need help on Mold!"},
-                    },
-                    {
-                        "type": "reply",
-                        "reply": {"id": "real_human", "title": "Live Human"},
-                    },
-                ]
-            },
-        },
-    }
-    send_interactive_message(to, payload)
-
+    namespace = "94d66366_9ec1_43a3_a84c_46039bd33ef5"
+    template_name = "main_menu"
+    send_template_message(to, template_name, namespace, [customer_name])
+    
 # -------------------------------
 # Admin Command Handling
 # -------------------------------

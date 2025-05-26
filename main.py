@@ -54,13 +54,14 @@ def send_text_message(to, message):
     print(f"✅ Sent WhatsApp text to {to}: {response.text}")
 
 def send_template_message(to, template_name, namespace, variables):
-    url = "https://waba.360dialog.io/v1/messages"
+    url = "https://waba-v2.360dialog.io/messages"  # Updated endpoint
     headers = {
         "D360-API-KEY": ACCESS_TOKEN,
         "Content-Type": "application/json"
     }
 
     payload = {
+        "messaging_product": "whatsapp",
         "to": to,
         "type": "template",
         "template": {

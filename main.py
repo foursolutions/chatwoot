@@ -221,7 +221,11 @@ def webhook():
             return "Verification token mismatch", 403
 
     elif request.method == "POST":
-        data = request.get_json()
+        if request.is_json:
+    	data = request.get_json()
+	else:
+    print("❌ Unsupported content type:", request.content_type)
+    return "Unsupported Media Type", 415
         try:
             msg = data["entry"][0]["changes"][0]["value"].get("messages", [None])[0]
             if msg is None:

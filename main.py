@@ -9,6 +9,7 @@ import re
 
 from flask import Flask, request
 from dotenv import load_dotenv
+from twilio.rest import Client
 
 # 1) Load environment variables
 load_dotenv()
@@ -17,6 +18,10 @@ load_dotenv()
 ACCESS_TOKEN = os.getenv("WHATSAPP_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+TWILIO_WHATSAPP_NUMBER = os.getenv("TWILIO_WHATSAPP_NUMBER")
+twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
 app = Flask(__name__)
 
@@ -43,21 +48,19 @@ def normalize_number(number):
         number = "+" + number
     return number
 
-def send_text_message(to, message):
-    url = f"https://graph.facebook.com/v17.0/{PHONE_NUMBER_ID}/messages"
-    headers = {
-        "Authorization": f"Bearer {ACCESS_TOKEN}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "messaging_product": "whatsapp",
-        "recipient_type": "individual",
-        "to": to,
-        "type": "text",
-        "text": {"body": message},
-    }
-    response = requests.post(url, json=payload, headers=headers)
-    print("✅ Sent Text Message:", response.json())
+def send_text_message(to_number, message):
+    """
+    Send a WhatsApp message using Twilio.
+    """
+    try:
+        msg = twilio_client.messages.create(
+            from_=TWILIO_WHATSAPP_NUMBER,
+            to=f"whatsapp:{to_number}" if not to_number.startswith("whatsapp:") else to_number,
+            body=message
+        )
+        print(f"✅ Sent Twilio WhatsApp message to {to_number}. SID: {msg.sid}")
+    except Exception as e:
+        print(f"❌ Failed to send WhatsApp message via Twilio: {e}")
 
 def send_interactive_message(to, payload):
     url = f"https://graph.facebook.com/v17.0/{PHONE_NUMBER_ID}/messages"

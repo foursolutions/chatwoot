@@ -36,14 +36,12 @@ ADMIN_TARGET = {}
 # Helper Functions
 # -------------------------------
 
-
 def normalize_number(number):
     """Remove spaces and ensure a leading '+'."""
     number = re.sub(r"\s+", "", number)
     if not number.startswith("+"):
         number = "+" + number
     return number
-
 
 def send_text_message(to, message):
     url = f"https://graph.facebook.com/v17.0/{PHONE_NUMBER_ID}/messages"
@@ -61,7 +59,6 @@ def send_text_message(to, message):
     response = requests.post(url, json=payload, headers=headers)
     print("✅ Sent Text Message:", response.json())
 
-
 def send_interactive_message(to, payload):
     url = f"https://graph.facebook.com/v17.0/{PHONE_NUMBER_ID}/messages"
     headers = {
@@ -70,7 +67,6 @@ def send_interactive_message(to, payload):
     }
     response = requests.post(url, json=payload, headers=headers)
     print("✅ Sent Interactive Message:", response.json())
-
 
 def initiate_live_agent(to, sender_name):
     live_sessions[to] = True
@@ -96,7 +92,6 @@ def initiate_live_agent(to, sender_name):
     elif to in bedbug_data:
         pass
 
-
 def reset_conversation(to, customer_name):
     car_fumigation_data.pop(to, None)
     mold_removal_data.pop(to, None)
@@ -104,7 +99,6 @@ def reset_conversation(to, customer_name):
     live_sessions.pop(to, None)
     send_text_message(to, "Conversation reset. Let's start fresh!")
     send_main_menu(to, customer_name)
-
 
 def send_main_menu(to, customer_name):
     tz = pytz.timezone("Asia/Singapore")
@@ -158,11 +152,9 @@ def send_main_menu(to, customer_name):
     }
     send_interactive_message(to, payload)
 
-
 # -------------------------------
 # Admin Command Handling (Dynamic Target)
 # -------------------------------
-
 
 def send_admin_command_menu(admin_number):
     payload = {
@@ -214,7 +206,6 @@ def send_admin_command_menu(admin_number):
     }
     send_interactive_message(admin_number, payload)
 
-
 def handle_admin_text(sender_number, text_body):
     lower_text = text_body.lower()
     if lower_text.startswith("set target"):
@@ -241,11 +232,9 @@ def handle_admin_text(sender_number, text_body):
         return True
     return False
 
-
 # -------------------------------
 # Flask Webhook Endpoint
 # -------------------------------
-
 
 @app.route("/webhook", methods=["GET", "POST"])
 def webhook():
@@ -257,45 +246,44 @@ def webhook():
         else:
             return "Verification token mismatch", 403
 
-    elif request.method == "POST":
+    if request.method == "POST":
+        data = None
+        # Accept both JSON (Meta) and form (Twilio)
         if request.is_json:
             data = request.get_json()
-    elif request.content_type.startswith("application/x-www-form-urlencoded"):
-        data = request.form.to_dict()
-        print("⚠️ Received form-encoded data:", data)
-        # Map Twilio format to WhatsApp-like structure
-        data = {
-            "entry": [{
-                "changes": [{
-                    "value": {
-                        "messages": [{
-                            "id": data.get("MessageSid"),
-                            "from": data.get("From").replace("whatsapp:", ""),
-                            "type": "text",
-                            "text": {"body": data.get("Body", "")},
-                        }],
-                        "contacts": [{
-                            "profile": {"name": data.get("ProfileName", "")}
-                        }]
-                    }
+        elif request.content_type and request.content_type.startswith("application/x-www-form-urlencoded"):
+            data = request.form.to_dict()
+            print("⚠️ Received form-encoded data:", data)
+            # Map Twilio format to WhatsApp-like structure
+            data = {
+                "entry": [{
+                    "changes": [{
+                        "value": {
+                            "messages": [{
+                                "id": data.get("MessageSid"),
+                                "from": data.get("From", "").replace("whatsapp:", ""),
+                                "type": "text",
+                                "text": {"body": data.get("Body", "")},
+                            }],
+                            "contacts": [{
+                                "profile": {"name": data.get("ProfileName", "")}
+                            }]
+                        }
+                    }]
                 }]
-            }]
-        }
-    else:
-        print("❌ Unsupported content type:", request.content_type)
-        return "Unsupported Media Type", 415
-    
+            }
+        else:
+            print("❌ Unsupported content type:", request.content_type)
+            return "Unsupported Media Type", 415
+
         try:
-            msg = data["entry"][0]["changes"][0]["value"].get("messages", [None])[
-                0]
+            msg = data["entry"][0]["changes"][0]["value"].get("messages", [None])[0]
             if msg is None:
                 return "OK", 200
 
             message_id = msg.get("id")
             sender_number = normalize_number(msg.get("from"))
-            sender_name = data["entry"][0]["changes"][0]["value"]["contacts"][0][
-                "profile"
-            ]["name"]
+            sender_name = data["entry"][0]["changes"][0]["value"]["contacts"][0]["profile"]["name"]
 
             if sender_number in ADMIN_NUMBERS:
                 print(f"Admin message from {sender_number}: {msg}")
@@ -849,18 +837,18 @@ def webhook():
                             ACCESS_TOKEN,
                             mold_removal_data,
                         )
-        except KeyError:
-            print("ℹ️ No message found, skipping...")
+        except KeyError as e:
+            print("ℹ️ No message found, skipping...", e)
             return "OK", 200
-        
+        except Exception as ex:
+            print("❌ Error in webhook processing:", ex)
+            return "OK", 200
+
         return "OK", 200
-
-
 
 @app.route("/", methods=["GET"])
 def index():
     return "Four Solutions Chatbot is live!", 200
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)

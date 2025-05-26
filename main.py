@@ -252,12 +252,13 @@ def handle_admin_text(sender_number, text_body):
 # Flask Webhook Endpoint
 # -------------------------------
 
-@app.route("/webhook", methods=["GET", "POST"])
+@app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
-    if request.method == "GET":
+    if request.method == 'GET':
         verify_token = request.args.get("hub.verify_token")
         challenge = request.args.get("hub.challenge")
-        if verify_token == VERIFY_TOKEN:
+        print("Received verify_token:", verify_token)
+        if verify_token == os.environ.get("VERIFY_TOKEN"):
             return challenge, 200
         else:
             return "Verification token mismatch", 403

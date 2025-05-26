@@ -15,27 +15,25 @@ def dispatch_message(request):
     from_number = request.values.get("From")
     body = request.values.get("Body", "").strip()
 
-    # Universal menu reset
+    # Menu reset
     if body.lower() == "menu":
         reset_session(from_number)
         return send_main_menu(from_number)
 
-    # --- THIS SECTION IS CRITICAL ---
-    # If in a car fumigation session, always handle in that flow
+    # 1. If in a car fumigation session, route to car fumigation!
     if from_number in car_fumigation_data:
         car_fumigation.handle_response(from_number, body)
         return "OK"
-    # If in a bedbug session, route to bedbug
+    # 2. If in a bedbug session, route to bedbug
     if from_number in bedbug_data:
         bedbug.handle_response(from_number, body)
         return "OK"
-    # If in a mold session, route to mold
+    # 3. If in a mold session, route to mold
     if from_number in mold_removal_data:
         mold.handle_response(from_number, body)
         return "OK"
-    # ---------------------------------
 
-    # Not in a session - start new
+    # 4. Only if NOT in a session, check for menu triggers!
     if body in ["1", "bedbug"]:
         bedbug.run_flow(from_number)
     elif body in ["2", "car fumigation", "car"]:

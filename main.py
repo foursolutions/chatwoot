@@ -95,6 +95,14 @@ def initiate_live_agent(to, sender_name):
     elif to in bedbug_data:
         pass
 
+def end_live_agent_session(to):
+    if to in live_sessions:
+        del live_sessions[to]
+    text_msg = (
+        "You have ended the live agent session. Feel free to continue chatting with me for assistance anytime!"
+    )
+    send_text_message(to, text_msg)
+
 def reset_conversation(to, customer_name):
     car_fumigation_data.pop(to, None)
     mold_removal_data.pop(to, None)
@@ -370,21 +378,22 @@ def webhook():
                 if text_body.lower() == "reset":
                     reset_conversation(sender_number, sender_name)
                     return "OK", 200
+                if text_body.lower() == "end":
+                    end_live_agent_session(sender_number)
+                    return "OK", 200
                 if text_body.lower() in ["live", "live agent", "agent", "connect me"]:
                     initiate_live_agent(sender_number, sender_name)
-                else:
-                    # If user is in a live agent session, do not auto-respond
-                    if sender_number in live_sessions and live_sessions[sender_number]:
-                        print(
-                            "Live agent session active; auto bot responses are disabled."
-                        )
-                    else:
-                        # SEND TEST REPLY HERE:
-                        send_text_message(sender_number, "👋 Hello! Your message was received. [Test Reply]")
-                        print("✅ Sent test reply to", sender_number)
                     return "OK", 200
-                    # Otherwise, do not send the main menu automatically.
-                    # You can add custom handling here if needed.
+
+                # If user is in a live agent session, do not auto-respond
+                if sender_number in live_sessions and live_sessions[sender_number]:
+                    print("Live agent session active; auto bot responses are disabled.")
+                    return "OK", 200
+
+                # Send main menu instead of test reply
+                send_main_menu(sender_number, sender_name)
+                print("✅ Sent main menu to", sender_number)
+                return "OK", 200
 
             # Handle interactive messages
             elif message_type == "interactive":

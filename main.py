@@ -375,6 +375,11 @@ def webhook():
                         print(
                             "Live agent session active; auto bot responses are disabled."
                         )
+                    else:
+                        # SEND TEST REPLY HERE:
+                        send_text_message(sender_number, "👋 Hello! Your message was received. [Test Reply]")
+                        print("✅ Sent test reply to", sender_number)
+                    return "OK", 200
                     # Otherwise, do not send the main menu automatically.
                     # You can add custom handling here if needed.
 

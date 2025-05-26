@@ -260,14 +260,31 @@ def webhook():
     elif request.method == "POST":
         if request.is_json:
             data = request.get_json()
-        elif request.content_type.startswith("application/x-www-form-urlencoded"):
-            data = request.form.to_dict()
-            print("⚠️ Received form-encoded data:", data)
-            # Optionally: convert to your usual expected structure
-        else:
-            print("❌ Unsupported content type:", request.content_type)
-            return "Unsupported Media Type", 415
-
+    elif request.content_type.startswith("application/x-www-form-urlencoded"):
+        data = request.form.to_dict()
+        print("⚠️ Received form-encoded data:", data)
+        # Map Twilio format to WhatsApp-like structure
+        data = {
+            "entry": [{
+                "changes": [{
+                    "value": {
+                        "messages": [{
+                            "id": data.get("MessageSid"),
+                            "from": data.get("From").replace("whatsapp:", ""),
+                            "type": "text",
+                            "text": {"body": data.get("Body", "")},
+                        }],
+                        "contacts": [{
+                            "profile": {"name": data.get("ProfileName", "")}
+                        }]
+                    }
+                }]
+            }]
+        }
+    else:
+        print("❌ Unsupported content type:", request.content_type)
+        return "Unsupported Media Type", 415
+    
         try:
             msg = data["entry"][0]["changes"][0]["value"].get("messages", [None])[
                 0]

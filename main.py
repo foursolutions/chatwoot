@@ -257,12 +257,13 @@ def webhook():
     if request.method == 'GET':
         verify_token = request.args.get("hub.verify_token")
         challenge = request.args.get("hub.challenge")
-        print("Received verify_token:", verify_token)
+        # ADD THE LINE BELOW HERE:
+        print("DEBUG - Received verify_token from 360dialog:", verify_token)
         if verify_token == os.environ.get("VERIFY_TOKEN"):
             return challenge, 200
         else:
             return "Verification token mismatch", 403
-
+        
     if request.method == "POST":
         # Only accept Meta/360dialog JSON webhook format
         if not request.is_json:

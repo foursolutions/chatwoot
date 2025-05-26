@@ -63,13 +63,9 @@ def send_text_message(to_number, message):
         print(f"❌ Failed to send WhatsApp message via Twilio: {e}")
 
 def send_interactive_message(to, payload):
-    url = f"https://graph.facebook.com/v17.0/{PHONE_NUMBER_ID}/messages"
-    headers = {
-        "Authorization": f"Bearer {ACCESS_TOKEN}",
-        "Content-Type": "application/json",
-    }
-    response = requests.post(url, json=payload, headers=headers)
-    print("✅ Sent Interactive Message:", response.json())
+    # Placeholder for interactive messages - Twilio currently doesn't support
+    # Facebook Graph API calls here. You can implement Twilio interactive messages later.
+    print(f"[Interactive message placeholder] To: {to}, Payload: {payload}")
 
 def initiate_live_agent(to, sender_name):
     live_sessions[to] = True

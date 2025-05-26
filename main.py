@@ -111,6 +111,11 @@ def normalize_number(number):
         number = "+" + number
     return number
 
+def send_test_template(to):
+    namespace = "94d66366_9ec1_43a3_a84c_46039bd33ef5"
+    template_name = "test_greeting"
+    send_template_message(to, template_name, namespace, ["Nate"])
+
 # -------------------------------
 # Live Agent & Menu Functions
 # -------------------------------
@@ -356,6 +361,9 @@ def webhook():
                     return "OK", 200
                 if text_body.lower() == "end":
                     end_live_agent_session(sender_number)
+                    return "OK", 200
+                if text_body.lower() == "test":
+                    send_test_template(sender_number)
                     return "OK", 200
                 if text_body.lower() in ["live", "live agent", "agent", "connect me"]:
                     initiate_live_agent(sender_number, sender_name)

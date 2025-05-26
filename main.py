@@ -159,7 +159,7 @@ def reset_conversation(to, customer_name):
 def send_main_menu(to, customer_name):
     namespace = "94d66366_9ec1_43a3_a84c_46039bd33ef5"
     template_name = "main_menu"
-    send_template_message(to, template_name, namespace, [customer_name])
+    send_template_message(to, "main_menu", "94d66366_9ec1_43a3_a84c_46039bd33ef5", [customer_name])
 
 # -------------------------------
 # Admin Command Handling

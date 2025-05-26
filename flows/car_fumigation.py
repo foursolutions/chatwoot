@@ -5,7 +5,6 @@ def run_flow(to):
     """
     Initiates the car fumigation service quotation flow.
     """
-    # Always set the session for this user at the very start!
     car_fumigation_data[to] = {"stage": "pest_selection"}
     menu_text = (
         "🚗 *Car Fumigation Service*\n\n"

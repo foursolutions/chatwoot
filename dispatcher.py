@@ -61,5 +61,3 @@ def reset_session(from_number):
 def send_main_menu(to):
     from services.twilio_client import send_whatsapp_message
     send_whatsapp_message(to, MAIN_MENU)
-
-

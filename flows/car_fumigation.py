@@ -1,10 +1,8 @@
 from services.twilio_client import send_whatsapp_message
-from sessions import car_fumigation_data
+from sessions import car_fumigation_data, reset_session
 
 def run_flow(to):
-    """
-    Initiates the car fumigation service quotation flow.
-    """
+    reset_session(to)  # <-- Clear all other flows first
     car_fumigation_data[to] = {"stage": "pest_selection"}
     menu_text = (
         "🚗 *Car Fumigation Service*\n\n"
@@ -19,9 +17,6 @@ def run_flow(to):
     send_whatsapp_message(to, menu_text)
 
 def handle_response(to, text):
-    """
-    Handles user responses based on their current flow stage.
-    """
     state = car_fumigation_data.get(to, {})
 
     if state.get("stage") == "pest_selection":
@@ -153,18 +148,17 @@ def handle_response(to, text):
             )
             car_fumigation_data.pop(to, None)
         elif text.strip().lower() == "restart":
+            reset_session(to)  # <-- Always reset ALL sessions
             run_flow(to)
         else:
             send_whatsapp_message(to, "⚠️ Invalid response. Please reply 'confirm' or 'restart'.")
 
     else:
         send_whatsapp_message(to, "🤖 Let's start over clearly.")
+        reset_session(to)
         run_flow(to)
 
 def send_summary(to, state):
-    """
-    Sends a summary of collected information for confirmation.
-    """
     summary = (
         "📝 *Car Fumigation Request Summary:*\n\n"
         f"Pest: {state['pest']}\n"
@@ -173,3 +167,4 @@ def send_summary(to, state):
         "Reply 'confirm' to submit or 'restart' to start again."
     )
     send_whatsapp_message(to, summary)
+

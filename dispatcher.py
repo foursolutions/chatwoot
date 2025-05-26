@@ -1,6 +1,7 @@
 # dispatcher.py
 from flows import bedbug, car_fumigation, mold
-from sessions import bedbug_data, car_fumigation_data, mold_removal_data
+from sessions import bedbug_data, car_fumigation_data, mold_removal_data, reset_session
+# (rest unchanged...)
 
 MAIN_MENU = (
     "👋 Welcome to Four Solutions Live Assist!\n"
@@ -15,12 +16,10 @@ def dispatch_message(request):
     from_number = request.values.get("From")
     body = request.values.get("Body", "").strip().lower()
 
-    # --- DEBUGGING: Print session data every time a message is received ---
     print("=== DEBUG: bedbug_data:", bedbug_data)
     print("=== DEBUG: car_fumigation_data:", car_fumigation_data)
     print("=== DEBUG: mold_removal_data:", mold_removal_data)
     print("=== Incoming from:", from_number, "body:", body)
-    # ----------------------------------------------------------------------
 
     # 1. Universal menu command: always resets all sessions and shows main menu
     if body == "menu":
@@ -52,11 +51,6 @@ def dispatch_message(request):
     else:
         send_main_menu(from_number)
     return "OK"
-
-def reset_session(from_number):
-    bedbug_data.pop(from_number, None)
-    car_fumigation_data.pop(from_number, None)
-    mold_removal_data.pop(from_number, None)
 
 def send_main_menu(to):
     from services.twilio_client import send_whatsapp_message

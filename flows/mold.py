@@ -1,11 +1,9 @@
 # flows/mold.py
 from services.twilio_client import send_whatsapp_message
-from sessions import mold_removal_data
+from sessions import mold_removal_data, reset_session
 
 def run_flow(to):
-    """
-    Initiates the mold removal quotation flow.
-    """
+    reset_session(to)  # <-- Always clear other flows first!
     mold_removal_data[to] = {"stage": "area_selection"}
     menu_text = (
         "🍄 *Mold Removal Service*\n\n"
@@ -24,9 +22,6 @@ def run_flow(to):
     send_whatsapp_message(to, menu_text)
 
 def handle_response(to, text):
-    """
-    Handles user responses based on their current flow stage.
-    """
     state = mold_removal_data.get(to, {})
 
     if state.get("stage") == "area_selection":
@@ -100,24 +95,24 @@ def handle_response(to, text):
 
     elif state.get("stage") == "confirmation":
         if text.strip().lower() == "confirm":
-            send_whatsapp_message(to,
+            send_whatsapp_message(
+                to,
                 "🎉 Thank you! We've received your details.\n"
                 "Our team will reach out shortly to provide your quotation and schedule an inspection."
             )
             mold_removal_data.pop(to, None)
         elif text.strip().lower() == "restart":
+            reset_session(to)
             run_flow(to)
         else:
             send_whatsapp_message(to, "⚠️ Invalid response. Please reply 'confirm' or 'restart'.")
 
     else:
         send_whatsapp_message(to, "🤖 Let's start again clearly.")
+        reset_session(to)
         run_flow(to)
 
 def send_growth_prompt(to):
-    """
-    Prompt the user to specify mold growth location.
-    """
     prompt = (
         "Please specify where mold growth is observed:\n"
         "1. Ceiling only\n"
@@ -128,17 +123,12 @@ def send_growth_prompt(to):
     send_whatsapp_message(to, prompt)
 
 def send_summary(to, state):
-    """
-    Sends a summary of collected information for final confirmation.
-    """
     summary = "📝 *Mold Removal Request Summary:*\n\n"
     summary += f"Affected Area: {state['area']}\n"
-    
     if "count" in state:
         summary += f"Number of affected rooms: {state['count']}\n"
-    
     summary += f"Mold Growth Location: {state['growth_location']}\n\n"
     summary += "Reply 'confirm' to submit or 'restart' to begin again."
-    
     send_whatsapp_message(to, summary)
+
 

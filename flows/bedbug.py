@@ -1,11 +1,9 @@
 # flows/bedbug.py
 from services.twilio_client import send_whatsapp_message
-from sessions import bedbug_data
+from sessions import bedbug_data, reset_session
 
 def run_flow(to):
-    """
-    Initiates the bedbug service quotation flow.
-    """
+    reset_session(to)  # <-- Clear all other flows first
     bedbug_data[to] = {"stage": "area_selection"}
     menu_text = (
         "🪲 *Bedbug Quotation*\n\n"
@@ -19,9 +17,6 @@ def run_flow(to):
     send_whatsapp_message(to, menu_text)
 
 def handle_response(to, text):
-    """
-    Handles responses based on user's current stage in the flow.
-    """
     state = bedbug_data.get(to, {})
 
     if state.get("stage") == "area_selection":
@@ -31,9 +26,7 @@ def handle_response(to, text):
             "3": "Whole Unit",
             "4": "Commercial Space"
         }
-
         area = area_mapping.get(text.strip())
-        
         if area:
             state["area"] = area
             state["stage"] = "count_entry"
@@ -66,12 +59,14 @@ def handle_response(to, text):
                 to,
                 "🎉 Thank you! We've received your details. Our team will reach out shortly with your quotation and further assistance."
             )
-            bedbug_data.pop(to, None)  # Clear the session data
+            bedbug_data.pop(to, None)
         elif text.strip().lower() == "restart":
+            reset_session(to)  # <-- Always reset ALL sessions
             run_flow(to)
         else:
             send_whatsapp_message(to, "⚠️ Invalid response. Please reply 'confirm' or 'restart'.")
 
     else:
         send_whatsapp_message(to, "🤖 I didn't quite understand that. Let's start again.")
+        reset_session(to)
         run_flow(to)

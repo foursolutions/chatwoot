@@ -8,7 +8,7 @@ def send_whatsapp_message(to, body):
     to = to if to.startswith("whatsapp:") else f"whatsapp:{to}"
     try:
         message = twilio_client.messages.create(
-            from_=f"whatsapp:{TWILIO_WHATSAPP_NUMBER}",
+            from_=TWILIO_WHATSAPP_NUMBER,
             to=to,
             body=body
         )

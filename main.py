@@ -552,6 +552,10 @@ def webhook():
             print("ℹ️ No message found, skipping...")
         return "OK", 200
 
+@app.route("/", methods=["GET"])
+def index():
+    return "Four Solutions Chatbot is live!", 200
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
 

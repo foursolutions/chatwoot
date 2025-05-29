@@ -361,7 +361,8 @@ def webhook():
                 button_reply = None
                 list_reply = None
                 if "button_reply" in interactive_data:
-                    button_reply = interactive_data["button_reply"]["title"]
+                     # Change here to use 'text'
+                    button_reply = interactive_data["button_reply"]["text"]
                 if "list_reply" in interactive_data:
                     list_reply = interactive_data["list_reply"]["title"]
                 dispatcher.handle_message(
@@ -372,6 +373,7 @@ def webhook():
                     access_token=ACCESS_TOKEN
                 )
                 return "OK", 200
+
 
         except KeyError as e:
             print("ℹ️ No message found, skipping...", e)

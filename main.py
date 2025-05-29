@@ -1,6 +1,7 @@
 import flows.bedbug as bedbug
 import flows.mold as mold
 import flows.car_fumigation as car_fumigation
+import dispatcher  # <-- Import your dispatcher!
 import os
 import requests
 import datetime
@@ -20,11 +21,11 @@ VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
 
 app = Flask(__name__)
 
-# Global session data dictionaries
-live_sessions = {}
-car_fumigation_data = {}
-mold_removal_data = {}
-bedbug_data = {}
+# Global session data dictionaries (legacy - now unused, but retained for admin/live agent logic if needed)
+# live_sessions = {}
+# car_fumigation_data = {}
+# mold_removal_data = {}
+# bedbug_data = {}
 last_message_id = {}
 
 # Define admin phone numbers (update with your own admin numbers)
@@ -37,9 +38,6 @@ ADMIN_TARGET = {}
 # -------------------------------
 
 def send_text_message(to, message):
-    """
-    Send a WhatsApp text message using 360dialog or Meta API.
-    """
     url = f"https://waba.360dialog.io/v1/messages"
     headers = {
         "D360-API-KEY": ACCESS_TOKEN,
@@ -83,15 +81,10 @@ def send_template_message(to, template_name, namespace, variables):
         print("⚠️ Error sending template message:")
         print("Request payload:", payload)
         print("Response text:", response.text)
-        # Optionally send fallback text message here if needed
     else:
         print(f"✅ Sent template message to {to}: {response.text}")
 
 def send_interactive_message(to, payload):
-    """
-    Send an interactive WhatsApp message using the 360dialog/Meta API.
-    (Payload must follow WhatsApp API structure.)
-    """
     url = f"https://waba.360dialog.io/v1/messages"
     headers = {
         "D360-API-KEY": ACCESS_TOKEN,
@@ -102,7 +95,6 @@ def send_interactive_message(to, payload):
     print(f"✅ Sent interactive message to {to}: {response.text}")
 
 def normalize_number(number):
-    """Remove spaces and ensure a leading '+'."""
     number = re.sub(r"\s+", "", number)
     if not number.startswith("+"):
         number = "+" + number
@@ -118,42 +110,20 @@ def send_test_template(to):
 # -------------------------------
 
 def initiate_live_agent(to, sender_name):
-    live_sessions[to] = True
+    # Placeholder for live agent logic if you want to extend later
     text_msg = (
         "Hold on tight—we’re summoning a real, living, breathing, functioning human support agent for you! "
         "They’ll join this chat as soon as they're available. In the meantime, feel free to explore our other services and read our FAQ!"
     )
     send_text_message(to, text_msg)
 
-    if to in mold_removal_data:
-        mold.send_mold_removal_faq(
-            to, PHONE_NUMBER_ID, ACCESS_TOKEN, send_interactive_message
-        )
-        final_msg = (
-            "Please upload some photos of the affected areas. Wide-angle shots from a doorway or corner help us see the entire space, "
-            "allowing our agent to provide a more accurate quote once they review your message."
-        )
-        send_text_message(to, final_msg)
-    elif to in car_fumigation_data:
-        car_fumigation.send_car_fumigation_faq(
-            to, PHONE_NUMBER_ID, ACCESS_TOKEN, send_interactive_message
-        )
-    elif to in bedbug_data:
-        pass
-
 def end_live_agent_session(to):
-    if to in live_sessions:
-        del live_sessions[to]
     text_msg = (
         "You have ended the live agent session. Feel free to continue chatting with me for assistance anytime!"
     )
     send_text_message(to, text_msg)
 
 def reset_conversation(to, customer_name):
-    car_fumigation_data.pop(to, None)
-    mold_removal_data.pop(to, None)
-    bedbug_data.pop(to, None)
-    live_sessions.pop(to, None)
     send_text_message(to, "Conversation reset. Let's start fresh!")
     send_main_menu(to, customer_name)
 
@@ -250,7 +220,6 @@ def webhook():
     if request.method == 'GET':
         verify_token = request.args.get("hub.verify_token")
         challenge = request.args.get("hub.challenge")
-        # ADD THE LINE BELOW HERE:
         print("DEBUG - Received verify_token from 360dialog:", verify_token)
         if verify_token == os.environ.get("VERIFY_TOKEN"):
             return challenge, 200
@@ -258,7 +227,6 @@ def webhook():
             return "Verification token mismatch", 403
         
     if request.method == "POST":
-        # Only accept Meta/360dialog JSON webhook format
         if not request.is_json:
             print("❌ Unsupported content type:", request.content_type)
             return "Unsupported Media Type", 415
@@ -290,101 +258,21 @@ def webhook():
             ) if message_type == "text" else ""
 
             # -------------------------------
-            # Bedbug Custom Area Text Input
-            # -------------------------------
-            if message_type == "text":
-                if sender_number in bedbug_data and bedbug_data[sender_number].get(
-                    "awaiting_other_area"
-                ):
-                    bedbug.process_bedbug_text_message(
-                        sender_number,
-                        text_body,
-                        bedbug_data,
-                        PHONE_NUMBER_ID,
-                        ACCESS_TOKEN,
-                        send_text_message,
-                    )
-                    return "OK", 200
-
             # Admin text command branch
+            # -------------------------------
             if message_type == "text" and sender_number in ADMIN_NUMBERS:
                 if handle_admin_text(sender_number, text_body):
                     return "OK", 200
 
-            # Car Fumigation: awaiting vehicle model details
-            if sender_number in car_fumigation_data and car_fumigation_data[
-                sender_number
-            ].get("awaiting_vehicle_model_details"):
-                car_fumigation_data[sender_number]["vehicle_details"] = text_body
-                car_fumigation_data[sender_number].pop(
-                    "awaiting_vehicle_model_details", None
-                )
-                send_text_message(
-                    sender_number, "Vehicle model details noted. Thank you!"
-                )
-                car_fumigation.send_location_selection(
-                    sender_number, PHONE_NUMBER_ID, ACCESS_TOKEN
-                )
-                return "OK", 200
-
-            # Car Fumigation pending flows
-            if sender_number in car_fumigation_data:
-                flow = car_fumigation_data[sender_number]
-                if flow.get("awaiting_appointment_datetime"):
-                    car_fumigation.handle_appointment_datetime(
-                        sender_number, text_body, car_fumigation_data, send_text_message
-                    )
-                    return "OK", 200
-                elif flow.get("awaiting_parking_address"):
-                    car_fumigation.handle_parking_address(
-                        sender_number, text_body, car_fumigation_data, send_text_message
-                    )
-                    return "OK", 200
-                elif flow.get("awaiting_vehicle_number"):
-                    car_fumigation.handle_vehicle_number(
-                        sender_number,
-                        text_body,
-                        car_fumigation_data,
-                        send_text_message,
-                        PHONE_NUMBER_ID,
-                        ACCESS_TOKEN,
-                    )
-                    return "OK", 200
-
-            # Standard user text handling
-            if message_type == "text":
-                if text_body.lower() == "reset":
-                    reset_conversation(sender_number, sender_name)
-                    return "OK", 200
-                if text_body.lower() == "end":
-                    end_live_agent_session(sender_number)
-                    return "OK", 200
-                if text_body.lower() == "test":
-                    send_test_template(sender_number)
-                    return "OK", 200
-                if text_body.lower() in ["live", "live agent", "agent", "connect me"]:
-                    initiate_live_agent(sender_number, sender_name)
-                    return "OK", 200
-
-                # If user is in a live agent session, do not auto-respond
-                if sender_number in live_sessions and live_sessions[sender_number]:
-                    print("Live agent session active; auto bot responses are disabled.")
-                    return "OK", 200
-
-                # Send main menu
-                send_main_menu(sender_number, sender_name)
-                print("✅ Sent main menu to", sender_number)
-                return "OK", 200
-
-            # Handle interactive messages
-            elif message_type == "interactive":
+            # -------------------------------
+            # Admin button/list interactive commands
+            # -------------------------------
+            if message_type == "interactive":
                 interactive_data = msg["interactive"]
                 # Admin button replies
                 if "button_reply" in interactive_data:
                     button_id = interactive_data["button_reply"]["id"]
-                    if sender_number in ADMIN_NUMBERS and button_id.startswith(
-                        "admin_"
-                    ):
+                    if sender_number in ADMIN_NUMBERS and button_id.startswith("admin_"):
                         target = ADMIN_TARGET.get(sender_number, sender_number)
                         if button_id == "admin_cfum_confirm":
                             car_fumigation.send_car_fumigation_preparation(
@@ -453,10 +341,37 @@ def webhook():
                             sender_number, "Admin command executed.")
                         return "OK", 200
 
-                # Normal user interactive flows (use your dispatcher/flows as in original)
-                # -- [Your original button/list handling logic for flows continues below] --
-                # (For brevity, refer to your original code for the rest)
-                # If you want, I can expand this area in full in the next step.
+            # =============================
+            # USER FLOW: REDIS DISPATCHER
+            # =============================
+            # All normal user text and button/list interactions routed via dispatcher
+
+            if message_type == "text":
+                dispatcher.handle_message(
+                    sender_number,
+                    text_body,
+                    button_reply=None,
+                    list_reply=None,
+                    access_token=ACCESS_TOKEN
+                )
+                return "OK", 200
+
+            elif message_type == "interactive":
+                interactive_data = msg["interactive"]
+                button_reply = None
+                list_reply = None
+                if "button_reply" in interactive_data:
+                    button_reply = interactive_data["button_reply"]["title"]
+                if "list_reply" in interactive_data:
+                    list_reply = interactive_data["list_reply"]["title"]
+                dispatcher.handle_message(
+                    sender_number,
+                    message_text="",
+                    button_reply=button_reply,
+                    list_reply=list_reply,
+                    access_token=ACCESS_TOKEN
+                )
+                return "OK", 200
 
         except KeyError as e:
             print("ℹ️ No message found, skipping...", e)
@@ -473,4 +388,3 @@ def index():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
-

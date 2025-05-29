@@ -54,12 +54,11 @@ def send_text_message(to, message):
     print(f"✅ Sent WhatsApp text to {to}: {response.text}")
 
 def send_template_message(to, template_name, namespace, variables):
-    url = "https://waba-v2.360dialog.io/messages"  # Updated endpoint
+    url = "https://waba-v2.360dialog.io/messages"
     headers = {
         "D360-API-KEY": ACCESS_TOKEN,
         "Content-Type": "application/json"
     }
-
     payload = {
         "messaging_product": "whatsapp",
         "to": to,
@@ -79,15 +78,12 @@ def send_template_message(to, template_name, namespace, variables):
             ]
         }
     }
-
     response = requests.post(url, json=payload, headers=headers)
-
     if response.status_code != 200:
         print("⚠️ Error sending template message:")
         print("Request payload:", payload)
         print("Response text:", response.text)
-        fallback_message = f"Hi {variables[0]}, how can I help you today?"
-        send_text_message(to, fallback_message)
+        # Optionally send fallback text message here if needed
     else:
         print(f"✅ Sent template message to {to}: {response.text}")
 

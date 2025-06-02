@@ -88,7 +88,6 @@ def send_car_fum_menu(to: str, phone_number_id: str):
 
 # ------------------------------------------------------------------------------
 # 4) Car Fumigation Info / Quote Options → Template `car_fum_quote_options`
-#    (Not used until final, but stubbed here)
 # ------------------------------------------------------------------------------
 def send_car_fum_quote_options(to: str, phone_number_id: str):
     """
@@ -175,11 +174,11 @@ def send_vehicle_type_list(to: str, phone_number_id: str):
                         "title": "Vehicle Types",
                         "rows": [
                             {"id": "vehicle_sedan",         "title": "Sedan/Hatchback",             "description": "Standard cars"},
-                            {"id": "vehicle_suv",           "title": "SUV",                         "description": "Sport Utility Vehicle"},
-                            {"id": "vehicle_mpv",           "title": "MPV",                         "description": "Multi-Purpose Vehicle"},
-                            {"id": "vehicle_vans",          "title": "Vans/Lorries",                "description": "Commercial vehicles"},
-                            {"id": "vehicle_ultra_luxury",  "title": "Super/Luxury Cars",           "description": "e.g. Bentley, Ferrari, Lamborghini, Rolls Royce equivalent"},
-                            {"id": "vehicle_others",        "title": "Others",                      "description": "Other vehicle types"}
+                            {"id": "vehicle_suv",           "title": "SUV",                          "description": "Sport Utility Vehicle"},
+                            {"id": "vehicle_mpv",           "title": "MPV",                          "description": "Multi-Purpose Vehicle"},
+                            {"id": "vehicle_vans",          "title": "Vans/Lorries",                 "description": "Commercial vehicles"},
+                            {"id": "vehicle_ultra_luxury",  "title": "Super/Luxury Cars",            "description": "e.g. Bentley, Ferrari, Lamborghini, Rolls Royce equivalent"},
+                            {"id": "vehicle_others",        "title": "Others",                       "description": "Other vehicle types"}
                         ]
                     }
                 ]
@@ -277,7 +276,24 @@ def send_location_selection(to: str, phone_number_id: str):
 
 
 # ------------------------------------------------------------------------------
-# 9) “Quote Summary” → Interactive Button Template
+# 9) Quote Calculation (Placeholder Logic)
+# ------------------------------------------------------------------------------
+def calculate_quote(state: dict) -> float:
+    """
+    A placeholder quote calculator. In production, replace with real logic.
+    Example: base + surcharges based on pest, vehicle type, zone.
+    """
+    base = 50.0
+    pest_type = state.get("pest_type", "")
+    vehicle_type = state.get("vehicle", "")
+    location = state.get("location", "")
+
+    # Base is overridden by send_quote_summary logic, so this may not be used
+    return base
+
+
+# ------------------------------------------------------------------------------
+# 10) “Quote Summary” → Interactive Button Template
 # ------------------------------------------------------------------------------
 def send_quote_summary(to: str, phone_number_id: str):
     """
@@ -375,13 +391,13 @@ def send_quote_summary(to: str, phone_number_id: str):
 
 
 # ------------------------------------------------------------------------------
-# 10) Universal flow-handler: handle_car_fumigation_flow
+# 11) Universal flow-handler: handle_car_fumigation_flow
 #     Called on every interactive (button/list) or text at collect steps.
 # ------------------------------------------------------------------------------
 def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict):
     """
     1) Decide whether this is a quick-reply button, an interactive list reply, or
-       plain text when we’re collecting “other pest” / “other vehicle” / “datetime.”
+       plain text when we’re collecting “other pest” / “other vehicle” steps.
     2) Extract payload or text.
     3) Update Redis state accordingly.
     4) Call the next send_*() function to continue the flow.
@@ -395,6 +411,9 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
         payload = message["button"]["payload"]  # e.g., "Need help on Pest!", "Yes", "No", etc.
         print(f"[DEBUG] handle_car_fumigation_flow: BUTTON payload='{payload}' from {from_number}")
 
+        state = user_state or {}
+        step = state.get("step")
+
         # A) “Need help on Pest!” on main_menu_v2
         if payload.lower() == "need help on pest!":
             clear_user_state(prefix, from_number)
@@ -406,11 +425,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             )
             return
 
-        # B) “Car Fumigation 🚗” handled in interactive (below)
-
-        # C) “Request a Quotation” on car_fum_menu (no longer used here)
-
-        # D) “More Info on Service” on car_fum_menu or quote summary
+        # B) “More Info on Service” (throughout)
         elif payload.lower() in ["more info on service", "fumigation_faq"]:
             send_text_message(
                 to=from_number,
@@ -422,7 +437,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             )
             return
 
-        # E) “Return to Main Menu”
+        # C) “Return to Main Menu”
         elif payload.lower() in ["return to main menu", "return_main_menu"]:
             clear_user_state(prefix, from_number)
             send_main_menu(
@@ -431,7 +446,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             )
             return
 
-        # F) “Yes” on quote summary → connect to live agent + send FAQ
+        # D) “Yes” on final quote summary (“Book Now”)
         elif payload.lower() in ["yes", "book_appointment", "car_fum_confirm_yes"]:
             clear_user_state(prefix, from_number)
             send_text_message(
@@ -461,46 +476,37 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             )
             return
 
-        # G) “No” on quote summary → return to quote summary (in case they want to revise)
+        # E) “No” on final quote summary → go back to quote summary
         elif payload.lower() in ["no", "return_to_quote", "car_fum_confirm_no"]:
-            # Go back to the step before summary: that was “select_location”
-            state = user_state or {}
             state["step"] = "select_location"
             set_user_state(prefix, from_number, state)
-
-            # Re-send the quote summary
             send_quote_summary(
                 to=from_number,
                 phone_number_id=os.getenv("PHONE_NUMBER_ID")
             )
             return
 
-        # H) “Yes”/“No” on luxury prompt (“luxury_yes”/“luxury_no”)
-        elif payload.lower() in ["luxury_yes", "luxury_no"]:
-            state = user_state or {}
-            # Store whether they require additional fee
-            state["continental"] = payload.lower()  # either "luxury_yes" or "luxury_no"
+        # ─── NEW: Handle “Yes”/“No” on luxury-fee prompt when step == “check_luxury” ───
+        elif step == "check_luxury" and payload.lower() in ["yes", "no"]:
+            # If user tapped “Yes” or “No” on the luxury‐brand question:
+            if payload.lower() == "yes":
+                state["continental"] = "luxury_yes"
+            else:  # payload.lower() == "no"
+                state["continental"] = "luxury_no"
+
+            # Move to location selection next
             state["step"] = "select_location"
             set_user_state(prefix, from_number, state)
 
-            # Send the updated location selection
             send_location_selection(
                 to=from_number,
                 phone_number_id=os.getenv("PHONE_NUMBER_ID")
             )
             return
 
-        # I) Button “Book Now” will be handled by dispatcher once live agent assigned (fallback here)
-        elif payload.lower() == "book_now":
-            send_text_message(
-                to=from_number,
-                body="Thank you! An agent will reach out to you soon."
-            )
-            return
-
-        # J) If unhandled button:
+        # F) Any other buttons that might slip through (unhandled)
         else:
-            print(f"[DEBUG] Unhandled BUTTON payload: '{payload}'")
+            print(f"[DEBUG] Unhandled BUTTON payload: '{payload}' (step={step})")
             send_text_message(
                 to=from_number,
                 body="Sorry, I didn’t understand that button. Type 'reset' to start over."
@@ -573,7 +579,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             if vehicle_choice == "vehicle_others":
                 # Ask for free-form vehicle model
                 state["step"] = "collect_other_vehicle_text"
-                state["vehicle"] = vehicle_choice  # store id so summary knows it’s “others”
+                state["vehicle"] = vehicle_choice
                 state["manual_quote"] = True
                 set_user_state(prefix, from_number, state)
 
@@ -599,8 +605,8 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             else:
                 # One of Sedan/SUV/MPV/Vans → prompt luxury brand question
                 state["vehicle"] = vehicle_choice
-                state["step"] = "check_luxury"
-                state["manual_quote"] = False  # default to computed
+                state["step"] = "check_luxury"       # <--- we stay here until Yes/No
+                state["manual_quote"] = False
                 set_user_state(prefix, from_number, state)
 
                 send_cfadditionalfee_prompt(
@@ -664,15 +670,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             )
             return
 
-        # C) collect_datetime (no longer used—datetime is implicit ASAP, or manual is not implemented here)
-        elif step == "collect_datetime":
-            # We no longer ask for date/time directly, so fallback:
-            send_text_message(
-                to=from_number,
-                body="Sorry, I didn’t understand that. Type 'reset' to start over."
-            )
-            return
-
+        # C) fallback for other text steps
         else:
             send_text_message(
                 to=from_number,

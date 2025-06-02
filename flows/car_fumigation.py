@@ -20,7 +20,7 @@ def send_main_menu(to: str, phone_number_id: str):
     Sends the top-level main menu template (main_menu_v2).
     This template has one body placeholder {{1}}, so we must supply exactly one non-empty string.
     """
-    # You can replace "there" with the actual name if you store it, e.g. user_name
+    # You can replace "there" with the actual user name if you store it.
     greeting_name = "there"
     resp = send_template_message(
         to=to,
@@ -311,7 +311,7 @@ def send_day_selection_prompt(to: str, phone_number_id: str):
 
 
 # ------------------------------------------------------------------------------
-# 10) “Which Time?” → Interactive Button Prompt
+# 10) “Which Time?” → Interactive Button Prompt (max. 3 buttons)
 # ------------------------------------------------------------------------------
 def send_time_selection_prompt(to: str, phone_number_id: str, chosen_date: str):
     """
@@ -319,19 +319,18 @@ def send_time_selection_prompt(to: str, phone_number_id: str, chosen_date: str):
     `chosen_date` is either "today", "tomorrow" or a user-typed "DD-MM-YYYY".
     We store it in state so we can attach it later.
     """
-    # 1) Store the chosen_date in state, so we can read it later
+    # 1) Store the chosen_date in state
     state = get_user_state("carfum", to) or {}
     state["appointment_date"] = chosen_date
     set_user_state("carfum", to, state)
 
-    # 2) Build the interactive button prompt for time
+    # 2) Build a 3-button prompt for time (WhatsApp allows max 3 buttons)
     text = (
         f"You chose *{chosen_date}* for your appointment.\n\n"
         "What time of day works best?\n"
         "• Morning (09:00–12:00)\n"
         "• Afternoon (12:00–17:00)\n"
-        "• Evening (17:00–20:00)\n"
-        "• Or enter a specific time (e.g. \"3:30pm\")."
+        "• Or enter a custom time (e.g. \"18:30\" or \"6:30pm\")."
     )
     payload = {
         "to": to,
@@ -344,7 +343,6 @@ def send_time_selection_prompt(to: str, phone_number_id: str, chosen_date: str):
                 "buttons": [
                     {"type": "reply", "reply": {"id": "time_morning",   "title": "Morning"}},
                     {"type": "reply", "reply": {"id": "time_afternoon", "title": "Afternoon"}},
-                    {"type": "reply", "reply": {"id": "time_evening",   "title": "Evening"}},
                     {"type": "reply", "reply": {"id": "time_custom",    "title": "Enter Time"}}
                 ]
             }
@@ -579,13 +577,11 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                     return
 
             # G) “Which Time?” step = collect_time_option
-            if step == "collect_time_option" and payload_lower in ["time_morning", "time_afternoon", "time_evening", "time_custom"]:
+            if step == "collect_time_option" and payload_lower in ["time_morning", "time_afternoon", "time_custom"]:
                 if payload_lower == "time_morning":
                     state["appointment_time"] = "09:00"
                 elif payload_lower == "time_afternoon":
                     state["appointment_time"] = "13:00"
-                elif payload_lower == "time_evening":
-                    state["appointment_time"] = "18:00"
                 else:  # "time_custom"
                     state["step"] = "collect_custom_time_text"
                     set_user_state(prefix, from_number, state)
@@ -593,12 +589,12 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                         to=from_number,
                         body=(
                             "Please type your preferred time in HH:MM (24-hour) or HH:MMam/pm (12-hour).  \n"
-                            "For example: `15:30` or `3:30pm`"
+                            "For example: `18:30` or `6:30pm`"
                         )
                     )
                     return
 
-                # If they tapped one of the three preset slots:
+                # If they tapped one of the two preset slots (Morning or Afternoon):
                 state["step"] = "collect_final_details"
                 set_user_state(prefix, from_number, state)
                 send_text_message(
@@ -696,6 +692,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                     body="Please type in your vehicle model (e.g. Toyota Hiace, Proton X70, etc.)."
                 )
                 return
+
             elif selected_id == "vehicle_ultra_luxury":
                 state["step"] = "select_location"
                 state["vehicle"] = selected_id
@@ -706,6 +703,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                     phone_number_id=os.getenv("PHONE_NUMBER_ID")
                 )
                 return
+
             else:
                 # One of Sedan/SUV/MPV/Vans → ask luxury-fee question
                 state["vehicle"] = selected_id
@@ -808,7 +806,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             if parsed_time is None:
                 send_text_message(
                     to=from_number,
-                    body="Sorry, I couldn’t parse that time. Please send `15:30` or `3:30pm`."
+                    body="Sorry, I couldn’t parse that time. Please send `18:30` or `6:30pm`."
                 )
                 return
 

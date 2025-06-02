@@ -17,12 +17,14 @@ from helpers import (
 def send_main_menu(to: str, phone_number_id: str):
     """
     Sends the top‐level main menu template (main_menu).
+    This template expects exactly 1 body parameter (e.g., a greeting).
     """
-    # Capture the response from 360dialog so we can debug it
+    # If your template expects something like "Welcome, {{1}}", replace "" with a real greeting.
+    params = [""]
     resp = send_template_message(
         to=to,
         template_name="main_menu",
-        template_params=[]
+        template_params=params
     )
     print(f"[DEBUG] send_main_menu → 360dialog response: {resp}")
 

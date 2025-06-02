@@ -1,3 +1,5 @@
+# flows/car_fumigation.py
+
 import os
 import requests
 import json
@@ -73,9 +75,9 @@ def send_pest_control_list(to: str, phone_number_id: str):
 def send_car_fum_menu(to: str, phone_number_id: str):
     """
     Sends the `car_fum_menu` template with quick‐reply button IDs:
-      - "car_fum_quote"
-      - "car_fum_info"
-      - "return_main_menu"
+      - "car_fum_quote"     (Request a Quotation)
+      - "car_fum_info"      (More Info on Service)
+      - "return_main_menu"  (Return to Main Menu)
     """
     resp = send_template_message(
         to=to,
@@ -91,9 +93,9 @@ def send_car_fum_menu(to: str, phone_number_id: str):
 def send_car_fum_quote_options(to: str, phone_number_id: str):
     """
     Sends the `car_fum_quote_options` template with quick‐reply button IDs:
-      - "car_fum_book"
-      - "car_fum_info"
-      - "return_main_menu"
+      - "car_fum_book"      (Book Appointment now)
+      - "car_fum_info"      (More Info on Service)
+      - "return_main_menu"  (Return to Main Menu)
     """
     resp = send_template_message(
         to=to,
@@ -109,8 +111,8 @@ def send_car_fum_quote_options(to: str, phone_number_id: str):
 def send_car_fum_appointment_method(to: str, phone_number_id: str):
     """
     Sends the `car_fum_appointment_method` template with buttons:
-      - "car_fum_asap"
-      - "car_fum_schedule"
+      - "car_fum_asap"      (As Soon As Possible)
+      - "car_fum_schedule"  (Schedule Later)
     """
     resp = send_template_message(
         to=to,
@@ -343,7 +345,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
 
     # ─── 1) Handle quick‐reply buttons ───
     if msg_type == "button":
-        payload = message["button"]["payload"]  # e.g., "Need help on Pest!" or "car_fum_quote"
+        payload = message["button"]["payload"]  # e.g., "Need help on Pest!" or "Request a Quotation"
         print(f"[DEBUG] handle_car_fumigation_flow: BUTTON payload='{payload}' from {from_number}")
 
         # ---- A) If user tapped “Need help on Pest!” on main_menu_v2 ----
@@ -362,20 +364,20 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             )
             return
 
-        # ---- B) If user tapped “Get Quote” on car_fum_menu ----
-        elif payload.lower() in ["get quote", "car_fum_quote"]:
+        # ---- B) If user tapped “Request a Quotation” on car_fum_menu ----
+        elif payload.lower() == "request a quotation" or payload.lower() == "car_fum_quote":
             state = user_state or {}
-            state["step"] = "select_quote_option"
+            state["step"] = "select_appointment_method"
             set_user_state(prefix, from_number, state)
 
-            send_car_fum_quote_options(
+            send_car_fum_appointment_method(
                 to=from_number,
                 phone_number_id=os.getenv("PHONE_NUMBER_ID")
             )
             return
 
-        # ---- C) If user tapped “car_fum_info” on car_fum_menu ----
-        elif payload.lower() == "car_fum_info":
+        # ---- C) If user tapped “More Info on Service” on car_fum_menu or quote_options ----
+        elif payload.lower() in ["more info on service", "car_fum_info"]:
             send_text_message(
                 to=from_number,
                 body=(
@@ -386,12 +388,40 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             )
             return
 
-        # ---- D) If user tapped “Return Main Menu” ----
-        elif payload.lower() == "return_main_menu":
+        # ---- D) If user tapped “Return to Main Menu” ----
+        elif payload.lower() == "return to main menu" or payload.lower() == "return_main_menu":
             clear_user_state(prefix, from_number)
             send_main_menu(
                 to=from_number,
                 phone_number_id=os.getenv("PHONE_NUMBER_ID")
+            )
+            return
+
+        # ---- E) If user tapped “ASAP” vs “Schedule” in appointment method ----
+        elif payload.lower() in ["asap", "car_fum_asap"]:
+            # Immediately book for 'today' (e.g., use a default or ask for details).
+            state = user_state or {}
+            state["step"] = "select_pest_type"
+            # Example: you might store preferred_dt = "ASAP" or a timestamp here
+            state["preferred_dt"] = "ASAP"
+            set_user_state(prefix, from_number, state)
+
+            # Now ask for pest type in vehicle
+            send_pest_type_list(
+                to=from_number,
+                phone_number_id=os.getenv("PHONE_NUMBER_ID")
+            )
+            return
+
+        elif payload.lower() in ["schedule", "car_fum_schedule"]:
+            # Ask the user to type a date/time manually
+            state = user_state or {}
+            state["step"] = "collect_datetime"
+            set_user_state(prefix, from_number, state)
+
+            send_text_message(
+                to=from_number,
+                body="Sure! Please reply with your preferred date/time (YYYY‐MM‐DD HH:MM)."
             )
             return
 
@@ -440,10 +470,71 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 )
                 return
 
-        # ---- B) If we’re in “select_quote_option”, user saw car_fum_quote_options list (if implemented) ----
-        # elif step == "select_quote_option":
-        #     (…additional logic here…)
-        #     return
+        # ---- B) If we’re in “select_pest_type”, user saw the Pest Type list ----
+        elif step == "select_pest_type":
+            pest_choice = interactive_payload["list_reply"]["id"]  # e.g., "cockroach"
+            print(f"[DEBUG] Selected pest type: '{pest_choice}'")
+
+            state["pest_type"] = pest_choice
+            state["step"] = "select_vehicle_type"
+            set_user_state(prefix, from_number, state)
+
+            send_vehicle_type_list(
+                to=from_number,
+                phone_number_id=os.getenv("PHONE_NUMBER_ID")
+            )
+            return
+
+        # ---- C) If we’re in “select_vehicle_type”, user saw Vehicle Type list ----
+        elif step == "select_vehicle_type":
+            vehicle_choice = interactive_payload["list_reply"]["id"]  # e.g., "suv"
+            print(f"[DEBUG] Selected vehicle type: '{vehicle_choice}'")
+
+            state["vehicle_type"] = vehicle_choice
+            state["step"] = "select_location"
+            set_user_state(prefix, from_number, state)
+
+            send_location_list(
+                to=from_number,
+                phone_number_id=os.getenv("PHONE_NUMBER_ID")
+            )
+            return
+
+        # ---- D) If we’re in “select_location”, user saw Location list ----
+        elif step == "select_location":
+            location_choice = interactive_payload["list_reply"]["id"]  # e.g., "east_zone"
+            print(f"[DEBUG] Selected location: '{location_choice}'")
+
+            state["location"] = location_choice
+            state["step"] = "show_quote_summary"
+            set_user_state(prefix, from_number, state)
+
+            # Now compute the quote
+            quote_amount = calculate_quote(state)  # e.g., 65.0
+            quote_text = f"SGD {quote_amount:.2f}"
+
+            # Build the human‐readable labels for the summary
+            pest_label = state["pest_type"].capitalize()
+            dt_label = state.get("preferred_dt", "ASAP")
+            location_label_map = {
+                "north_zone": "North Zone",
+                "south_zone": "South Zone",
+                "east_zone": "East Zone",
+                "west_zone": "West Zone"
+            }
+            location_label = location_label_map.get(state["location"], state["location"])
+            vehicle_label = state["vehicle_type"].upper()
+
+            send_car_fum_quote_summary(
+                to=from_number,
+                phone_number_id=os.getenv("PHONE_NUMBER_ID"),
+                estimated_total=quote_text,
+                pest_reported=pest_label,
+                preferred_dt=dt_label,
+                parking_address=location_label,
+                vehicle_desc=vehicle_label
+            )
+            return
 
         else:
             print(f"[DEBUG] Interactive received, but unknown step='{step}' for {from_number}")
@@ -453,7 +544,36 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             )
             return
 
-    # ─── 3) Fallback for any other payload types ───
+    # ─── 3) Handle plain‐text replies at “collect_datetime” step ───
+    elif msg_type == "text":
+        # Example: user typed a date/time string when state["step"] == "collect_datetime"
+        state = user_state or {}
+        step = state.get("step")
+        text_body = message["text"]["body"].strip()
+        print(f"[DEBUG] handle_car_fumigation_flow: TEXT at step='{step}': '{text_body}' from {from_number}")
+
+        if step == "collect_datetime":
+            # Save the user’s preferred date/time
+            state["preferred_dt"] = text_body
+            state["step"] = "select_pest_type"
+            set_user_state(prefix, from_number, state)
+
+            # Ask for pest type in vehicle
+            send_pest_type_list(
+                to=from_number,
+                phone_number_id=os.getenv("PHONE_NUMBER_ID")
+            )
+            return
+
+        else:
+            # If it’s a text outside of expected “collect_datetime” step, fallback
+            send_text_message(
+                to=from_number,
+                body="Sorry, I didn’t understand that. Type 'reset' to start over."
+            )
+            return
+
+    # ─── 4) Fallback for any other payload types ───
     else:
         print(f"[DEBUG] handle_car_fumigation_flow: Unsupported msg_type='{msg_type}'")
         send_text_message(

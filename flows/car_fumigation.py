@@ -19,7 +19,7 @@ def send_main_menu(to: str, phone_number_id: str):
     Sends the top-level main menu template (main_menu_v2).
     This template has one body placeholder {{1}}, so we must supply exactly one non-empty string.
     """
-    greeting_name = "there"  # Replace with actual user name if you prefer
+    greeting_name = "there"  # Replace with actual user name if desired
     resp = send_template_message(
         to=to,
         template_name="main_menu_v2",
@@ -283,9 +283,9 @@ def send_quote_summary(to: str, phone_number_id: str):
     Builds the quote summary based on everything in user_state (stored in Redis).
     - If the user chose an “ultra_luxury” or “vehicle_others” model, we mark manual quote.
     - Otherwise, we compute:
-        • base_quote   (vehicle pricing)
-        • additional_fee ($10 if luxury_yes)
-        • location_charge (based on zone)
+        • base_quote       (vehicle pricing)
+        • additional_fee   ($10 if luxury_yes)
+        • location_charge  (based on zone)
     Then we send an interactive button template with three quick-reply options:
       - "book_appointment"
       - "fumigation_faq"
@@ -294,7 +294,7 @@ def send_quote_summary(to: str, phone_number_id: str):
     state = get_user_state("carfum", to) or {}
 
     if state.get("manual_quote", False):
-        # Custom-quote placeholder
+        # Custom-quote placeholder text
         summary_text = (
             "On-Site Car Fumigation Quotation\n\n"
             "Below is the estimated breakdown of your quotation:\n\n"
@@ -317,7 +317,7 @@ def send_quote_summary(to: str, phone_number_id: str):
         elif vehicle == "vehicle_vans":
             base_quote = 170
         else:
-            base_quote = 0  # fallback
+            base_quote = 0
 
         # Determine additional_fee if luxury
         additional_fee = 10 if state.get("continental") == "luxury_yes" else 0
@@ -342,10 +342,10 @@ def send_quote_summary(to: str, phone_number_id: str):
         summary_text = (
             "On-Site Car Fumigation Quotation\n\n"
             "Below is the estimated breakdown of your quotation:\n\n"
-            f”- Car Model Type Pricing: ${base_quote}\n”
-            f”- Additional Care Fee: {additional_fee_str}\n”
-            f”- On-site Service Charge: ${location_charge}\n\n”
-            f”Estimated Total: ${computed_quote}\n\n”
+            f"- Car Model Type Pricing: ${base_quote}\n"
+            f"- Additional Care Fee: {additional_fee_str}\n"
+            f"- On-site Service Charge: ${location_charge}\n\n"
+            f"Estimated Total: ${computed_quote}\n\n"
             "Please select an option below:"
         )
 
@@ -375,8 +375,8 @@ def send_quote_summary(to: str, phone_number_id: str):
 # ------------------------------------------------------------------------------
 def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict):
     """
-    1) Decide whether this is a quick-reply button (top-level "button" or "interactive.button_reply"),
-       an interactive list reply, or plain text for “collect” steps.
+    1) Decide whether this is a quick-reply button (top-level "button" or nested "interactive.button_reply"),
+       an interactive list reply, or plain text for "collect" steps.
     2) Extract the payload/text.
     3) Update Redis state accordingly.
     4) Call the next send_*() function to continue the flow.
@@ -385,15 +385,13 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
     prefix = "carfum"
     msg_type = message.get("type")
 
-    # ─── 1) Handle quick-reply BUTTONS (360dialog can send either "button" or "interactive.button_reply") ───
+    # ─── 1) Handle quick-reply BUTTONS (either "button" or "interactive.button_reply") ───
 
-    # Helper: unify payload‐extraction for quick-reply buttons
     def extract_button_payload(msg: dict) -> str:
         """
-        360dialog sometimes wraps quick replies under:
-          "type": "button",     field: message["button"]["payload"]
-        OR
-          "type": "interactive", field: message["interactive"]["button_reply"]["id"]
+        360dialog may send quick-reply buttons under:
+          - msg["type"] == "button" → msg["button"]["payload"]
+          - msg["type"] == "interactive" and msg["interactive"]["type"] == "button_reply" → msg["interactive"]["button_reply"]["id"]
         """
         if msg.get("type") == "button":
             return msg["button"]["payload"]
@@ -402,7 +400,6 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
         return ""
 
     if msg_type in ["button", "interactive"]:
-        # Attempt to extract a quick-reply ID
         payload = extract_button_payload(message)
         if payload:
             payload_lower = payload.lower()
@@ -411,7 +408,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             state = user_state or {}
             step = state.get("step")
 
-            # A) “Need help on Pest!” on main_menu_v2
+            # A) "Need help on Pest!" from main menu
             if payload_lower == "need help on pest!":
                 clear_user_state(prefix, from_number)
                 new_state = {"step": "choose_service"}
@@ -422,7 +419,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 )
                 return
 
-            # B) “More Info on Service” at any point
+            # B) "More Info on Service" at any point
             if payload_lower in ["more info on service", "fumigation_faq"]:
                 send_text_message(
                     to=from_number,
@@ -434,7 +431,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 )
                 return
 
-            # C) “Return to Main Menu”
+            # C) "Return to Main Menu"
             if payload_lower in ["return to main menu", "return_main_menu"]:
                 clear_user_state(prefix, from_number)
                 send_main_menu(
@@ -443,7 +440,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 )
                 return
 
-            # D) “Yes” on final quote summary (Book Now)
+            # D) "Yes" on final quote summary (Book Now)
             if payload_lower in ["yes", "book_appointment", "car_fum_confirm_yes"]:
                 clear_user_state(prefix, from_number)
                 send_text_message(
@@ -473,7 +470,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 )
                 return
 
-            # E) “No” on final quote summary → back to quote summary
+            # E) "No" on final quote summary → back to quote summary
             if payload_lower in ["no", "return_to_quote", "car_fum_confirm_no"]:
                 state["step"] = "select_location"
                 set_user_state(prefix, from_number, state)
@@ -483,9 +480,8 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 )
                 return
 
-            # F) “Yes”/“No” on luxury-fee prompt when step == "check_luxury"
+            # F) "Yes"/"No" on luxury-fee prompt when step == "check_luxury"
             if step == "check_luxury" and payload_lower in ["yes", "no", "luxury_yes", "luxury_no"]:
-                # Accept either the raw "yes"/"no" or the IDs "luxury_yes"/"luxury_no"
                 if payload_lower in ["yes", "luxury_yes"]:
                     state["continental"] = "luxury_yes"
                 else:
@@ -499,7 +495,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 )
                 return
 
-            # G) Any other button/unrecognized payload
+            # G) Unhandled button payload
             print(f"[DEBUG] Unhandled BUTTON/BR payload: '{payload_lower}' (step={step})")
             send_text_message(
                 to=from_number,
@@ -509,8 +505,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
 
     # ─── 2) Handle interactive LIST replies ───
     if msg_type == "interactive" and message["interactive"].get("type") == "list_reply":
-        interactive_payload = message["interactive"]
-        selected_id = interactive_payload["list_reply"]["id"]  # e.g. "car_fumigation" or "cockroach", etc.
+        selected_id = message["interactive"]["list_reply"]["id"]  # e.g. "car_fumigation" or "cockroach", etc.
         print(f"[DEBUG] handle_car_fumigation_flow: LIST payload='{selected_id}' from {from_number}")
 
         state = user_state or {}
@@ -599,7 +594,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             )
             return
 
-        # Otherwise:
+        # Otherwise, unrecognized step
         print(f"[DEBUG] LIST reply received but step='{step}' is unexpected")
         send_text_message(
             to=from_number,
@@ -636,7 +631,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             )
             return
 
-        # C) any other text outside expected steps
+        # Otherwise, unrecognized text step
         send_text_message(
             to=from_number,
             body="Sorry, I didn’t understand that. Type 'reset' to start over."

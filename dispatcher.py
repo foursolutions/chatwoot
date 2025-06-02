@@ -33,13 +33,6 @@ ECHO_TEMPLATE = "echo_message_text"
 # ------------------------------------------------------------------------------
 @app.route("/webhook", methods=["GET"])
 def verify_webhook():
-    """
-    Webhook verification endpoint. Meta/WhatsApp will call this with:
-      - hub.mode
-      - hub.verify_token
-      - hub.challenge
-    We must echo back the “hub.challenge” if the token matches VERIFY_TOKEN.
-    """
     mode = request.args.get("hub.mode")
     token = request.args.get("hub.verify_token")
     challenge = request.args.get("hub.challenge")
@@ -55,29 +48,20 @@ def verify_webhook():
 # ------------------------------------------------------------------------------
 @app.route("/webhook", methods=["POST"])
 def receive_message():
-    """
-    Handle incoming WhatsApp messages sent via 360dialog:
-      - Text messages
-      - Interactive replies (list or quick‐reply button)
-      - Other types (we fallback if unsupported)
-    We delegate Car Fumigation logic to flows/car_fumigation.handle_car_fumigation_flow.
-    """
     payload = request.get_json()
 
     try:
-        # Drill down into the WhatsApp payload structure:
         entry = payload.get("entry", [])[0]
         changes = entry.get("changes", [])[0]
         value = changes.get("value", {})
         messages = value.get("messages", [])
 
-        # If there are no messages, just return 200
         if not messages:
             return make_response("No messages to process", 200)
 
         message = messages[0]
         from_number = message["from"]    # e.g. "6581234567"
-        msg_type = message.get("type")   # "text", "interactive", etc.
+        msg_type = message.get("type")   # "text", "interactive", "button", etc.
 
         # 1) If it's a plain text message:
         if msg_type == "text":
@@ -131,13 +115,10 @@ def receive_message():
             )
             return make_response("Echo fallback sent", 200)
 
-        # 2) If it's an interactive reply (button or list):
+        # 2) If it's an interactive list reply or list menu:
         elif msg_type == "interactive":
             print(f"[DEBUG] Received INTERACTIVE payload from {from_number}: {json.dumps(message)}")
-            # Fetch existing state
             state = get_user_state(REDIS_PREFIX, from_number)
-
-            # Delegate to Car Fumigation flow handler
             car_fumigation.handle_car_fumigation_flow(
                 from_number=from_number,
                 message=message,
@@ -145,7 +126,18 @@ def receive_message():
             )
             return make_response("Interactive reply handled", 200)
 
-        # 3) Any other message types (media, etc.) → send fallback
+        # 3) If it's a quick-reply button (360dialog sends type="button"):
+        elif msg_type == "button":
+            print(f"[DEBUG] Received BUTTON payload from {from_number}: {json.dumps(message)}")
+            state = get_user_state(REDIS_PREFIX, from_number)
+            car_fumigation.handle_car_fumigation_flow(
+                from_number=from_number,
+                message=message,
+                user_state=state
+            )
+            return make_response("Button reply handled", 200)
+
+        # 4) Any other message types (media, etc.) → send fallback
         else:
             catchall_text = (
                 "Sorry, I can’t handle that type of message. "

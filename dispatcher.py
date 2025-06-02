@@ -1,9 +1,11 @@
+# dispatcher.py
+
 import os
 import json
 import redis
 
 from flows.car_fumigation import (
-    send_car_fum_menu,
+    send_car_fumigation_options,
     send_pest_list,
     send_vehicle_model_list,
     send_location_list,
@@ -72,7 +74,7 @@ def handle_message(sender_number, message_text, button_reply=None, list_reply=No
         if list_reply.startswith("Car Fumigation"):
             state["step"] = "main_menu"
             set_user_state(FLOW, user_id, state)
-            send_car_fum_menu(user_id, access_token)
+            send_car_fumigation_options(user_id, access_token)
             return
 
         # Bed Bugs chosen?
@@ -104,7 +106,7 @@ def handle_message(sender_number, message_text, button_reply=None, list_reply=No
             send_pest_list(user_id, access_token)
             return
         elif button_reply == "More Info on Service":
-            send_car_fum_menu(user_id, access_token)
+            send_car_fumigation_options(user_id, access_token)
             return
         elif button_reply == "Return to Main Menu":
             clear_user_state(FLOW, user_id)
@@ -204,7 +206,7 @@ def handle_message(sender_number, message_text, button_reply=None, list_reply=No
     if step == "appointment_confirmation" and button_reply in ("Yes", "No"):
         if button_reply == "Yes":
             clear_user_state(FLOW, user_id)
-            send_car_fum_menu(user_id, access_token)
+            send_car_fumigation_options(user_id, access_token)
             set_user_state(FLOW, user_id, {"step": "main_menu"})
         else:
             state["step"] = "showing_summary"
@@ -216,3 +218,4 @@ def handle_message(sender_number, message_text, button_reply=None, list_reply=No
     from flows.car_fumigation import send_pest_control_dropdown
     send_pest_control_dropdown(user_id, access_token)
     set_user_state(FLOW, user_id, {"step": "select_service"})
+

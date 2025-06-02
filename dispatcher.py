@@ -1,24 +1,25 @@
 # dispatcher.py
+
 import os
 import json
-import requests
-from flows import car_fumigation  # only import flow functions (no shared helpers here)
+from flows import car_fumigation
 from helpers import (
     get_user_state,
     set_user_state,
     clear_user_state,
     send_template_message,
     send_interactive_message,
+    send_text_message
 )
 
-# ====================
-# Environment / Config
-# ====================
+# ==========================
+# Configuration & Constants
+# ==========================
 WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 TEMPLATE_NAMESPACE = os.getenv("TEMPLATE_NAMESPACE")
 
-# Prefix for Car Fumigation user‐state in Redis
+# Prefix for Car Fumigation flow in Redis
 CARFUM_PREFIX = "carfum"
 
 # ===========================
@@ -26,30 +27,28 @@ CARFUM_PREFIX = "carfum"
 # ===========================
 def handle_event(payload: dict):
     """
-    Called from main.py whenever a message/event arrives from Meta/360dialog.
-    We parse out contacts → message type → interactive or text, then route.
+    Receives the entire JSON payload from Meta/360dialog, checks for WhatsApp messages,
+    and passes each message to route_user().
     """
     if payload.get("object") != "whatsapp_business_account":
         return
 
-    entries = payload.get("entry", [])
-    for entry in entries:
-        changes = entry.get("changes", [])
-        for change in changes:
+    for entry in payload.get("entry", []):
+        for change in entry.get("changes", []):
             val = change.get("value", {})
             messages = val.get("messages", [])
             metadata = val.get("metadata", {})
             phone_number_id = metadata.get("phone_number_id", PHONE_NUMBER_ID)
 
             for message in messages:
-                from_number = message.get("from")         # e.g. "6591234567"
+                from_number = message.get("from")  # e.g. "6591234567"
                 msg_type = message.get("type")
 
                 button_id = None
                 list_id = None
                 text_body = None
 
-                # 1) Extract interactive/button or list replies
+                # 1) Check for interactive replies
                 if msg_type == "interactive":
                     interactive = message.get("interactive", {})
                     itype = interactive.get("type")
@@ -58,11 +57,11 @@ def handle_event(payload: dict):
                     elif itype == "list_reply":
                         list_id = interactive["list_reply"]["id"]
 
-                # 2) If not interactive, check if it's plain text
+                # 2) Otherwise, check for plain-text
                 elif msg_type == "text":
                     text_body = message["text"]["body"].strip().lower()
 
-                # 3) Route based on button_id, list_id, or text
+                # 3) Delegate to route_user()
                 route_user(
                     from_number,
                     button_id,
@@ -71,13 +70,14 @@ def handle_event(payload: dict):
                     phone_number_id
                 )
 
+
 def route_user(from_number, button_id, list_id, text_body, phone_number_id):
     """
-    Using button_id, list_id, or text_body, decide what to do.
-    We focus on the Car Fumigation flow first. Later you can add bedbug_flow, mold_flow, etc.
+    Routes the interaction based on button_id, list_id, or text_body.
+    Currently implements only the Car Fumigation flow. Bedbug and Mold flows can be added similarly.
     """
 
-    # 1) If user tapped “Need help on Pest!” (template button_id="pest_control")
+    # === 1) User taps “Need help on Pest!” (main_menu button_id="pest_control") ===
     if button_id == "pest_control":
         car_fumigation.send_pest_control_list(
             to=from_number,
@@ -87,7 +87,7 @@ def route_user(from_number, button_id, list_id, text_body, phone_number_id):
         set_user_state(CARFUM_PREFIX, from_number, state)
         return
 
-    # 2) If user chose “Car Fumigation” from that list:
+    # === 2) User selects “Car Fumigation” from that list (list_id="car_fumigation") ===
     if list_id == "car_fumigation":
         car_fumigation.send_car_fum_menu(
             to=from_number,
@@ -130,7 +130,7 @@ def route_user(from_number, button_id, list_id, text_body, phone_number_id):
         clear_user_state(CARFUM_PREFIX, from_number)
         return
 
-    # 6) Car Fumigation: User selecting a Pest Type in a list
+    # 6) User selects a Pest Type (list_id in ["cockroach", "ants", "lizards", "other_pest"])
     if list_id in ["cockroach", "ants", "lizards", "other_pest"]:
         pest_selected = list_id
         state = get_user_state(CARFUM_PREFIX, from_number)
@@ -144,13 +144,14 @@ def route_user(from_number, button_id, list_id, text_body, phone_number_id):
         )
         return
 
-    # 7) Car Fumigation: User selecting a Vehicle Type
+    # 7) User selects a Vehicle Type (list_id in ["sedan", "suv", "mpv", "ultra_luxury"])
     if list_id in ["sedan", "suv", "mpv", "ultra_luxury"]:
         vehicle_selected = list_id
         state = get_user_state(CARFUM_PREFIX, from_number)
         state["vehicle_type"] = vehicle_selected
 
         if vehicle_selected == "ultra_luxury":
+            # Need free‐text brand
             state["step"] = "awaiting_luxury_brand"
             set_user_state(CARFUM_PREFIX, from_number, state)
             send_text_message(
@@ -159,6 +160,7 @@ def route_user(from_number, button_id, list_id, text_body, phone_number_id):
             )
             return
         else:
+            # Proceed to location selection
             state["step"] = "awaiting_location"
             set_user_state(CARFUM_PREFIX, from_number, state)
             car_fumigation.send_location_list(
@@ -167,11 +169,10 @@ def route_user(from_number, button_id, list_id, text_body, phone_number_id):
             )
             return
 
-    # 8) Car Fumigation: If awaiting luxury brand (free‐text)
+    # 8) If awaiting a luxury brand (free‐text), capture it from text_body
     state = get_user_state(CARFUM_PREFIX, from_number)
     if state.get("step") == "awaiting_luxury_brand" and text_body:
-        luxury_brand = text_body
-        state["luxury_brand"] = luxury_brand
+        state["luxury_brand"] = text_body
         state["step"] = "awaiting_location"
         set_user_state(CARFUM_PREFIX, from_number, state)
 
@@ -181,22 +182,25 @@ def route_user(from_number, button_id, list_id, text_body, phone_number_id):
         )
         return
 
-    # 9) Car Fumigation: User choosing a Location
+    # 9) User selects a Location (list_id in ["north_zone", "south_zone", "east_zone", "west_zone"])
     if list_id in ["north_zone", "south_zone", "east_zone", "west_zone"]:
         location_selected = list_id
         state = get_user_state(CARFUM_PREFIX, from_number)
         state["location"] = location_selected
+
+        # Compute quote
         quote_amount = car_fumigation.calculate_quote(state)
         state["quote"] = quote_amount
         state["step"] = "sent_quote_summary"
         set_user_state(CARFUM_PREFIX, from_number, state)
 
+        # Send the “quote summary” template (using the same template as final confirmation)
         car_fumigation.send_car_fum_quote_summary(
             to=from_number,
             phone_number_id=phone_number_id,
             estimated_total=f"${quote_amount:.2f}",
             pest_reported=state["pest_type"],
-            preferred_dt="(Select Date/Time next)",   # placeholder
+            preferred_dt="(Select Date/Time next)",
             parking_address="(Select Address next)",
             vehicle_desc=(
                 state["luxury_brand"]
@@ -206,7 +210,7 @@ def route_user(from_number, button_id, list_id, text_body, phone_number_id):
         )
         return
 
-    # 10) User choosing appointment‐method (button_id="car_fum_asap" or "car_fum_schedule")
+    # 10) User selects appointment method from template `car_fum_appointment_method`
     if button_id == "car_fum_asap":
         state = get_user_state(CARFUM_PREFIX, from_number)
         state["appointment_method"] = "ASAP"
@@ -262,7 +266,8 @@ def route_user(from_number, button_id, list_id, text_body, phone_number_id):
         state["step"] = "awaiting_confirmation"
         set_user_state(CARFUM_PREFIX, from_number, state)
 
-        send_car_fum_appointment_confirmation(
+        # Send the final “appointment confirmation” template
+        car_fumigation.send_car_fum_appointment_confirmation(
             to=from_number,
             phone_number_id=phone_number_id,
             estimated_total=f"${state['quote']:.2f}",
@@ -273,7 +278,7 @@ def route_user(from_number, button_id, list_id, text_body, phone_number_id):
         )
         return
 
-    # 14) User responds “Yes” or “No” to confirmation
+    # 14) User responds “Yes” or “No” to appointment confirmation (button_id)
     if button_id == "car_fum_confirm_yes":
         send_text_message(
             to=from_number,
@@ -293,7 +298,7 @@ def route_user(from_number, button_id, list_id, text_body, phone_number_id):
         clear_user_state(CARFUM_PREFIX, from_number)
         return
 
-    # 15) Catch‐all: if nothing matched
+    # 15) Catch‐all for unrecognized input
     send_text_message(
         to=from_number,
         body=(

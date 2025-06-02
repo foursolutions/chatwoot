@@ -1,22 +1,27 @@
 # helpers.py
+
 import os
 import json
 import requests
 import redis
 
-# === Environment / Config ===
+# ============
+# Configuration
+# ============
 WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
 TEMPLATE_NAMESPACE = os.getenv("TEMPLATE_NAMESPACE")
 REDIS_URL = os.getenv("REDIS_URL")
 
-# Initialize Redis client
+# Initialize Redis client (decode_responses=True for string I/O)
 r = redis.StrictRedis.from_url(REDIS_URL, decode_responses=True)
 
-# === Redis‐based State Helpers ===
+# ===========================
+# Redis‐based State Functions
+# ===========================
 def get_user_state(prefix: str, user_id: str) -> dict:
     """
-    Fetches the JSON‐encoded user‐state dict from Redis under key "<prefix>:<user_id>".
-    Returns an empty dict if nothing is stored.
+    Fetches the JSON‐encoded state dict from Redis under key "<prefix>:<user_id>".
+    Returns an empty dict if no state is present.
     """
     key = f"{prefix}:{user_id}"
     raw = r.get(key)
@@ -24,7 +29,8 @@ def get_user_state(prefix: str, user_id: str) -> dict:
 
 def set_user_state(prefix: str, user_id: str, state: dict):
     """
-    Stores the JSON‐encoded `state` dict under key "<prefix>:<user_id>" with 1h TTL.
+    Stores the JSON‐encoded `state` dict under key "<prefix>:<user_id>"
+    with a TTL of 1 hour.
     """
     key = f"{prefix}:{user_id}"
     r.set(key, json.dumps(state), ex=3600)
@@ -36,12 +42,15 @@ def clear_user_state(prefix: str, user_id: str):
     key = f"{prefix}:{user_id}"
     r.delete(key)
 
-# === 360dialog / HTTP Helpers ===
+# ===================================
+# 360dialog/Meta HTTP‐Request Functions
+# ===================================
 def send_template_message(to_phone: str, template_name: str, template_params=None):
     """
-    Sends a 360dialog “template” message to `to_phone`.
-    - template_name: must match an approved template in your 360dialog account.
-    - template_params: list of strings to fill {{1}}, {{2}}, etc. in the template body.
+    Sends a WhatsApp template message via 360dialog.
+    - to_phone: recipient phone number (e.g. "6591234567")
+    - template_name: exact name of the approved template in 360dialog
+    - template_params: list of strings that fill {{1}}, {{2}}, ... in the template body
     """
     if template_params is None:
         template_params = []
@@ -77,8 +86,8 @@ def send_template_message(to_phone: str, template_name: str, template_params=Non
 
 def send_interactive_message(payload: dict):
     """
-    Sends a “session‐based” interactive message (list, quick‐reply, etc.) to 360dialog.
-    The `payload` dict must contain at least:
+    Sends a “session‐based” interactive message (list or quick‐reply) via 360dialog.
+    The payload must include at least:
       {
         "to": "<PHONE_NUMBER>",
         "type": "interactive",
@@ -97,8 +106,7 @@ def send_interactive_message(payload: dict):
 
 def send_text_message(to: str, body: str):
     """
-    Sends a simple text‐message (non‐template) to `to`. This is allowed if the user
-    has messaged you within 24h. Useful for free‐text prompts.
+    Sends a simple text message (non‐template) via 360dialog. Allowed if user messaged within 24h.
     """
     url = "https://waba.360dialog.io/v1/messages"
     headers = {
@@ -114,3 +122,4 @@ def send_text_message(to: str, body: str):
     if resp.status_code not in (200, 201):
         print(f"[send_text_message] Error {resp.status_code}: {resp.text}")
     return resp.json()
+

@@ -34,10 +34,12 @@ def clear_user_state(prefix: str, user_id: str):
 # ===================================
 # 360dialog/Meta HTTP‐Request Functions
 # ===================================
-def send_template_message(to_phone: str, template_name: str, template_params=None):
+def send_template_message(to: str, template_name: str, template_params=None):
     """
     Sends a WhatsApp template message via 360dialog.
-    Must include "messaging_product": "whatsapp" at the top level.
+    - to: recipient phone number (e.g., "6591234567")
+    - template_name: exact name of the approved template in 360dialog
+    - template_params: list of strings to fill {{1}}, {{2}}, ... in the template body
     """
     if template_params is None:
         template_params = []
@@ -50,7 +52,7 @@ def send_template_message(to_phone: str, template_name: str, template_params=Non
 
     body = {
         "messaging_product": "whatsapp",
-        "to": to_phone,
+        "to": to,
         "type": "template",
         "template": {
             "namespace": TEMPLATE_NAMESPACE,

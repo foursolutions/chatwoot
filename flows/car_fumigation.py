@@ -16,15 +16,16 @@ from helpers import (
 # ============================
 def send_main_menu(to: str, phone_number_id: str):
     """
-    Sends the top‐level main menu template (main_menu).
-    This template expects exactly 1 body parameter (e.g., a greeting).
+    Sends the top‐level main menu template (main_menu_v2).
+    This template has one body placeholder {{1}}, so we must supply exactly one non‐empty string.
     """
-    # If your template expects something like "Welcome, {{1}}", replace "" with a real greeting.
-    params = [""]
+    # You can replace "there" with a real username if you have it,
+    # or something generic like "Friend" or "there".
+    greeting_name = "there"
     resp = send_template_message(
         to=to,
-        template_name="main_menu",
-        template_params=params
+        template_name="main_menu_v2",     # ← use the exact template name from 360dialog
+        template_params=[greeting_name]   # ← one non‐empty string for {{1}}
     )
     print(f"[DEBUG] send_main_menu → 360dialog response: {resp}")
 

@@ -1,5 +1,3 @@
-# flows/car_fumigation.py
-
 import os
 import requests
 from helpers import (

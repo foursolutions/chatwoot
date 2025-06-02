@@ -1,5 +1,3 @@
-# dispatcher.py
-
 import os
 import json
 from flask import Flask, request, make_response
@@ -60,7 +58,7 @@ def receive_message():
       - Text messages
       - Interactive replies (list or quick‐reply button)
       - Other types (we fallback if unsupported)
-    We delegate Car Fumigation logic to flows/car_fumigation.py.
+    We delegate Car Fumigation logic to flows/car_fumigation.handle_car_fumigation_flow.
     """
     payload = request.get_json()
 
@@ -151,4 +149,3 @@ def receive_message():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-

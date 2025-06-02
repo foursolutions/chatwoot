@@ -1,5 +1,3 @@
-# helpers.py
-
 import os
 import requests
 import redis

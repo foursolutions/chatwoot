@@ -9,7 +9,6 @@ from helpers import (
     clear_user_state,
     send_template_message,
     send_interactive_message,
-    send_text_message
 )
 
 # ==========================
@@ -21,6 +20,10 @@ TEMPLATE_NAMESPACE = os.getenv("TEMPLATE_NAMESPACE")
 
 # Prefix for Car Fumigation flow in Redis
 CARFUM_PREFIX = "carfum"
+
+# The name of our “echo” template that simply prefixes user text
+ECHO_TEMPLATE = "echo_message_text"
+
 
 # ===========================
 # Main Webhook Event Handler
@@ -74,7 +77,8 @@ def handle_event(payload: dict):
 def route_user(from_number, button_id, list_id, text_body, phone_number_id):
     """
     Routes the interaction based on button_id, list_id, or text_body.
-    This version auto‐sends main_menu on any inbound plain text if no state exists.
+    Auto‐sends main_menu on any inbound plain text if no state exists.
+    All free-text responses now use the echo_message_text template.
     """
 
     # 0) If user sent ANY text, and they have no saved state (or typed "menu"), send main_menu
@@ -85,7 +89,6 @@ def route_user(from_number, button_id, list_id, text_body, phone_number_id):
                 to=from_number,
                 phone_number_id=phone_number_id
             )
-            # Store that we just sent the main menu
             state = {"step": "sent_main_menu"}
             set_user_state(CARFUM_PREFIX, from_number, state)
             return
@@ -126,12 +129,16 @@ def route_user(from_number, button_id, list_id, text_body, phone_number_id):
 
     # 4) “More Info on Service” (button_id="car_fum_info")
     if button_id == "car_fum_info":
-        text = (
-            "Our on‐site Car Fumigation service uses a fogger machine, is "
-            "non‐oily, odor‐free, and includes interior sanitization.\n"
-            "Please tap 'Request a Quotation' if you'd like a quote."
+        # Instead of send_text_message, use the echo_message_text template
+        info_text = (
+            "Our on-site Car Fumigation service uses a fogger machine, is non-oily, "
+            "odor-free, and includes interior sanitization. Please tap 'Request a Quotation' if you'd like a quote."
         )
-        send_text_message(to=from_number, body=text)
+        send_template_message(
+            to=from_number,
+            template_name=ECHO_TEMPLATE,
+            template_params=[info_text]
+        )
         return
 
     # 5) “Return to Main Menu” (button_id="return_main_menu")
@@ -164,16 +171,18 @@ def route_user(from_number, button_id, list_id, text_body, phone_number_id):
         state["vehicle_type"] = vehicle_selected
 
         if vehicle_selected == "ultra_luxury":
-            # Ask for free‐text brand
+            # Ask for free-text brand via template
             state["step"] = "awaiting_luxury_brand"
             set_user_state(CARFUM_PREFIX, from_number, state)
-            send_text_message(
+            prompt_text = "Please type your luxury vehicle brand (e.g., Mercedes S-Class):"
+            send_template_message(
                 to=from_number,
-                body="Please type your luxury vehicle brand (e.g., Mercedes S-Class):"
+                template_name=ECHO_TEMPLATE,
+                template_params=[prompt_text]
             )
             return
         else:
-            # Go straight to location
+            # Proceed to location selection
             state["step"] = "awaiting_location"
             set_user_state(CARFUM_PREFIX, from_number, state)
             car_fumigation.send_location_list(
@@ -182,7 +191,7 @@ def route_user(from_number, button_id, list_id, text_body, phone_number_id):
             )
             return
 
-    # 8) If awaiting a luxury brand (free‐text)
+    # 8) If awaiting a luxury brand (free-text)
     state = get_user_state(CARFUM_PREFIX, from_number)
     if state.get("step") == "awaiting_luxury_brand" and text_body:
         state["luxury_brand"] = text_body
@@ -229,9 +238,11 @@ def route_user(from_number, button_id, list_id, text_body, phone_number_id):
         state["step"] = "awaiting_parking_address"
         set_user_state(CARFUM_PREFIX, from_number, state)
 
-        send_text_message(
+        prompt_text = "Got it. Please provide your parking address now."
+        send_template_message(
             to=from_number,
-            body="Got it. Please provide your parking address now."
+            template_name=ECHO_TEMPLATE,
+            template_params=[prompt_text]
         )
         return
 
@@ -241,9 +252,11 @@ def route_user(from_number, button_id, list_id, text_body, phone_number_id):
         state["step"] = "awaiting_date_time"
         set_user_state(CARFUM_PREFIX, from_number, state)
 
-        send_text_message(
+        prompt_text = "Okay, please type your preferred date/time (e.g., 2025-06-10 14:00)."
+        send_template_message(
             to=from_number,
-            body="Okay, please type your preferred date/time (e.g., 2025-06-10 14:00)."
+            template_name=ECHO_TEMPLATE,
+            template_params=[prompt_text]
         )
         return
 
@@ -254,9 +267,11 @@ def route_user(from_number, button_id, list_id, text_body, phone_number_id):
         state["step"] = "awaiting_parking_address"
         set_user_state(CARFUM_PREFIX, from_number, state)
 
-        send_text_message(
+        prompt_text = "Thanks. Now please provide your parking address."
+        send_template_message(
             to=from_number,
-            body="Thanks. Now please provide your parking address."
+            template_name=ECHO_TEMPLATE,
+            template_params=[prompt_text]
         )
         return
 
@@ -266,9 +281,11 @@ def route_user(from_number, button_id, list_id, text_body, phone_number_id):
         state["step"] = "awaiting_vehicle_number"
         set_user_state(CARFUM_PREFIX, from_number, state)
 
-        send_text_message(
+        prompt_text = "Got the parking address. Please type your vehicle number (e.g., SGA1234A)."
+        send_template_message(
             to=from_number,
-            body="Got the parking address. Please type your vehicle number (e.g., SGA1234A)."
+            template_name=ECHO_TEMPLATE,
+            template_params=[prompt_text]
         )
         return
 
@@ -292,29 +309,35 @@ def route_user(from_number, button_id, list_id, text_body, phone_number_id):
 
     # 14) User answers “Yes” or “No” (button_id)
     if button_id == "car_fum_confirm_yes":
-        send_text_message(
+        confirmation_text = (
+            "Great! Your appointment is confirmed. A human agent will reach out shortly to finalize details."
+        )
+        send_template_message(
             to=from_number,
-            body=(
-                "Great! Your appointment is confirmed. "
-                "A human agent will reach out shortly to finalize details."
-            )
+            template_name=ECHO_TEMPLATE,
+            template_params=[confirmation_text]
         )
         clear_user_state(CARFUM_PREFIX, from_number)
         return
 
     if button_id == "car_fum_confirm_no":
-        send_text_message(
+        fallback_text = (
+            "No problem. You can type 'restart' to begin again or tap 'Car Fumigation' from the main menu."
+        )
+        send_template_message(
             to=from_number,
-            body="No problem. You can type 'restart' to begin again or tap 'Car Fumigation' from the main menu."
+            template_name=ECHO_TEMPLATE,
+            template_params=[fallback_text]
         )
         clear_user_state(CARFUM_PREFIX, from_number)
         return
 
     # 15) Catch‐all for anything unrecognized
-    send_text_message(
+    catchall_text = (
+        "Sorry, I didn’t understand that. Please tap 'Need help on Pest!' or type 'menu' to see options again."
+    )
+    send_template_message(
         to=from_number,
-        body=(
-            "Sorry, I didn’t understand that. Please tap 'Need help on Pest!' "
-            "or type 'menu' to see options again."
-        )
+        template_name=ECHO_TEMPLATE,
+        template_params=[catchall_text]
     )

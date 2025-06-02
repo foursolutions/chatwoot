@@ -3,7 +3,6 @@
 import os
 import json
 from datetime import datetime, timedelta
-import dateutil.parser
 
 from helpers import (
     get_user_state,
@@ -591,7 +590,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                     send_text_message(
                         to=from_number,
                         body=(
-                            "Please type your preferred time in HH:MM or HH:MM am/pm format.\n"
+                            "Please type your preferred time in HH:MM (24-hour) or HH:MMam/pm (12-hour). "
                             "For example: `15:30` or `3:30pm`"
                         )
                     )
@@ -741,7 +740,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
         state = user_state or {}
         step = state.get("step")
         text_body = message["text"]["body"].strip()
-        print(f"[DEBUG] handle_car_fumigation_flow: TEXT at step='{step}': '{text_body}' from {from_number}")
+        print(f"[DEBUG] handle_car_fumIGATION_FLOW: TEXT at step='{step}': '{text_body}' from {from_number}")
 
         # A) collect_other_pest_text
         if step == "collect_other_pest_text":
@@ -769,6 +768,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
         if step == "collect_custom_date_text":
             user_date = text_body
             try:
+                # Validate YYYY-MM-DD format
                 parsed = datetime.strptime(user_date, "%Y-%m-%d")
                 state["appointment_date"] = user_date
                 state["step"] = "collect_time_option"
@@ -788,29 +788,39 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
         # D) collect_custom_time_text (user enters free-form time)
         if step == "collect_custom_time_text":
             user_time = text_body
-            try:
-                dt = dateutil.parser.parse(user_time)
-                state["appointment_time"] = dt.strftime("%H:%M")
-                state["step"] = "collect_final_details"
-                set_user_state(prefix, from_number, state)
-                send_text_message(
-                    to=from_number,
-                    body=(
-                        "Thanks. Finally, please send:\n\n"
-                        "Vehicle Model: <e.g. Toyota Wish>\n"
-                        "Vehicle Number: <e.g. SSS1111X>\n"
-                        "On-site Location: <e.g. 1 Tampines North Drive 1, Singapore 528559>\n\n"
-                        "Example:\n"
-                        "Vehicle Model: Toyota Wish\n"
-                        "Vehicle Number: SSS1111X\n"
-                        "On-site Location: 1 Tampines North Drive 1, Singapore 528559"
-                    )
-                )
-            except Exception:
+            # Try parsing “HH:MM” (24-hour) or “H:MMam/pm” or “HH:MMam/pm”
+            parsed_time = None
+            for fmt in ("%H:%M", "%I:%M%p", "%I:%M%P"):
+                try:
+                    parsed_time = datetime.strptime(user_time.upper().replace(" ", ""), fmt).time()
+                    break
+                except Exception:
+                    continue
+
+            if parsed_time is None:
                 send_text_message(
                     to=from_number,
                     body="Sorry, I couldn’t parse that time. Please send `15:30` or `3:30pm`."
                 )
+                return
+
+            # If parsing succeeded:
+            state["appointment_time"] = parsed_time.strftime("%H:%M")
+            state["step"] = "collect_final_details"
+            set_user_state(prefix, from_number, state)
+            send_text_message(
+                to=from_number,
+                body=(
+                    "Thanks. Finally, please send:\n\n"
+                    "Vehicle Model: <e.g. Toyota Wish>\n"
+                    "Vehicle Number: <e.g. SSS1111X>\n"
+                    "On-site Location: <e.g. 1 Tampines North Drive 1, Singapore 528559>\n\n"
+                    "Example:\n"
+                    "Vehicle Model: Toyota Wish\n"
+                    "Vehicle Number: SSS1111X\n"
+                    "On-site Location: 1 Tampines North Drive 1, Singapore 528559"
+                )
+            )
             return
 
         # E) collect_final_details (user enters vehicle & location info)

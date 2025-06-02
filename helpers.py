@@ -65,7 +65,7 @@ def send_template_message(to: str, template_name: str, template_params=None):
         "template": {
             "name": template_name,
             "language": {
-                "code": "en_US"
+                "code": "en"   # <-- changed from "en_US" to "en"
             },
             "components": [
                 {

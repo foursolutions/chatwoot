@@ -22,8 +22,8 @@ def send_main_menu(to: str, phone_number_id: str):
     greeting_name = "there"  # Replace "there" with a real username if you prefer
     resp = send_template_message(
         to=to,
-        template_name="main_menu_v2",     # Exactly match your template name in 360dialog
-        template_params=[greeting_name]   # One non‐empty string for {{1}}
+        template_name="main_menu_v2",
+        template_params=[greeting_name]
     )
     print(f"[DEBUG] send_main_menu → 360dialog response: {resp}")
 
@@ -276,24 +276,7 @@ def send_location_selection(to: str, phone_number_id: str):
 
 
 # ------------------------------------------------------------------------------
-# 9) Quote Calculation (Placeholder Logic)
-# ------------------------------------------------------------------------------
-def calculate_quote(state: dict) -> float:
-    """
-    A placeholder quote calculator. In production, replace with real logic.
-    Example: base + surcharges based on pest, vehicle type, zone.
-    """
-    base = 50.0
-    pest_type = state.get("pest_type", "")
-    vehicle_type = state.get("vehicle", "")
-    location = state.get("location", "")
-
-    # Base is overridden by send_quote_summary logic, so this may not be used
-    return base
-
-
-# ------------------------------------------------------------------------------
-# 10) “Quote Summary” → Interactive Button Template
+# 9) “Quote Summary” → Interactive Button Template
 # ------------------------------------------------------------------------------
 def send_quote_summary(to: str, phone_number_id: str):
     """
@@ -391,7 +374,7 @@ def send_quote_summary(to: str, phone_number_id: str):
 
 
 # ------------------------------------------------------------------------------
-# 11) Universal flow-handler: handle_car_fumigation_flow
+# 10) Universal flow-handler: handle_car_fumigation_flow
 #     Called on every interactive (button/list) or text at collect steps.
 # ------------------------------------------------------------------------------
 def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict):
@@ -605,7 +588,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             else:
                 # One of Sedan/SUV/MPV/Vans → prompt luxury brand question
                 state["vehicle"] = vehicle_choice
-                state["step"] = "check_luxury"       # <--- we stay here until Yes/No
+                state["step"] = "check_luxury"       # <— wait here until they tap Yes/No
                 state["manual_quote"] = False
                 set_user_state(prefix, from_number, state)
 

@@ -1,10 +1,8 @@
-# dispatcher.py
-
 import os
 import json
 import redis
 
-from car_fumigation import (
+from flows.car_fumigation import (
     send_car_fum_menu,
     send_pest_list,
     send_vehicle_model_list,
@@ -15,7 +13,7 @@ from car_fumigation import (
     send_appointment_method,
     send_appointment_confirmation
 )
-from bedbug import send_bedbug_initial_menu
+from flows.bedbug import send_bedbug_initial_menu
 
 # -------------------------------
 # REDIS SETUP
@@ -63,7 +61,7 @@ def handle_message(sender_number, message_text, button_reply=None, list_reply=No
     # If user explicitly typed "menu" or "main menu", restart the pest-control dropdown
     if message_text and message_text.lower() in ("menu", "main menu", "restart"):
         clear_user_state(FLOW, user_id)
-        from car_fumigation import send_pest_control_dropdown
+        from flows.car_fumigation import send_pest_control_dropdown
         send_pest_control_dropdown(user_id, access_token)
         set_user_state(FLOW, user_id, {"step": "select_service"})
         return
@@ -87,14 +85,14 @@ def handle_message(sender_number, message_text, button_reply=None, list_reply=No
         # (Add other pest categories here, e.g. Booklice, Roaches & Ants, etc.)
         # Example:
         # if list_reply.startswith("Booklice"):
-        #     from booklice import send_booklice_initial_menu
+        #     from flows.booklice import send_booklice_initial_menu
         #     state["step"] = "booklice_start"
         #     set_user_state(FLOW, user_id, state)
         #     send_booklice_initial_menu(user_id, access_token)
         #     return
 
         # Fallback: re-show the pest-control dropdown
-        from car_fumigation import send_pest_control_dropdown
+        from flows.car_fumigation import send_pest_control_dropdown
         send_pest_control_dropdown(user_id, access_token)
         return
 
@@ -110,7 +108,7 @@ def handle_message(sender_number, message_text, button_reply=None, list_reply=No
             return
         elif button_reply == "Return to Main Menu":
             clear_user_state(FLOW, user_id)
-            from car_fumigation import send_pest_control_dropdown
+            from flows.car_fumigation import send_pest_control_dropdown
             send_pest_control_dropdown(user_id, access_token)
             set_user_state(FLOW, user_id, {"step": "select_service"})
             return
@@ -177,7 +175,7 @@ def handle_message(sender_number, message_text, button_reply=None, list_reply=No
             return
         elif button_reply == "Return to Main Menu":
             clear_user_state(FLOW, user_id)
-            from car_fumigation import send_pest_control_dropdown
+            from flows.car_fumigation import send_pest_control_dropdown
             send_pest_control_dropdown(user_id, access_token)
             set_user_state(FLOW, user_id, {"step": "select_service"})
             return
@@ -215,6 +213,6 @@ def handle_message(sender_number, message_text, button_reply=None, list_reply=No
         return
 
     # --- FALLBACK: unknown state → show Pest Control dropdown again ---
-    from car_fumigation import send_pest_control_dropdown
+    from flows.car_fumigation import send_pest_control_dropdown
     send_pest_control_dropdown(user_id, access_token)
     set_user_state(FLOW, user_id, {"step": "select_service"})

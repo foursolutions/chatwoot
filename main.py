@@ -7,8 +7,8 @@ import re
 from flask import Flask, request
 from dotenv import load_dotenv
 
-import dispatcher  # dispatcher.py now imports from root modules, not from flows/
-from car_fumigation import send_pest_control_dropdown, send_car_fum_menu
+import dispatcher  # dispatcher.py (which itself imports from flows/*.py)
+from flows.car_fumigation import send_pest_control_dropdown, send_car_fum_menu
 
 # -------------------------------
 # Load environment variables
@@ -151,7 +151,7 @@ def handle_admin_text(sender_number, text_body):
 
     if lower == "appointment confirmed":
         target = ADMIN_TARGET.get(sender_number, sender_number)
-        from car_fumigation import send_car_fumigation_preparation
+        from flows.car_fumigation import send_car_fumigation_preparation
         send_car_fumigation_preparation(target, PHONE_NUMBER_ID, ACCESS_TOKEN)
         send_text_message(sender_number, f"Appointment confirmed command sent to {target}")
         return True
@@ -272,4 +272,3 @@ def index():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
-

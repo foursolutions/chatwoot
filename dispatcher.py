@@ -11,7 +11,7 @@ from helpers import (
     send_interactive_message,
     send_text_message,
 )
-from flows import car_fumigation  # Car Fumigation flow (everything else moved there)
+from flows import car_fumigation  # Car Fumigation flow
 
 app = Flask(__name__)
 
@@ -20,6 +20,9 @@ app = Flask(__name__)
 # ------------------------------------------------------------------------------
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")       # Your webhook verification token
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID") # Only needed if your flows refer to it
+
+# Redis key prefix for Car Fumigation user states
+REDIS_PREFIX = "carfum"
 
 # Name of the “echo” fallback template (approved in 360dialog)
 ECHO_TEMPLATE = "echo_message_text"
@@ -81,12 +84,12 @@ def receive_message():
             text_body = message["text"]["body"].strip().lower()
 
             # Fetch any existing user state from Redis
-            state = get_user_state(car_fumigation.FLOW, from_number)
+            state = get_user_state(REDIS_PREFIX, from_number)
             current_step = state.get("step")
 
             # If user typed "menu" or there is no existing state → send main menu
             if text_body == "menu" or not current_step:
-                clear_user_state(car_fumigation.FLOW, from_number)
+                clear_user_state(REDIS_PREFIX, from_number)
                 car_fumigation.send_main_menu(to=from_number)
                 return make_response("Main menu sent", 200)
 
@@ -114,7 +117,7 @@ def receive_message():
         # 2) If it's an interactive reply (button or list):
         elif msg_type == "interactive":
             # Fetch existing state
-            state = get_user_state(car_fumigation.FLOW, from_number)
+            state = get_user_state(REDIS_PREFIX, from_number)
 
             # Delegate to Car Fumigation flow handler
             car_fumigation.handle_car_fumigation_flow(

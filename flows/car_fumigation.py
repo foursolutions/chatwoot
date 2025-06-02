@@ -1,7 +1,6 @@
 # flows/car_fumigation.py
 
 import os
-import json
 from datetime import datetime, timedelta
 
 from helpers import (
@@ -21,7 +20,8 @@ def send_main_menu(to: str, phone_number_id: str):
     Sends the top-level main menu template (main_menu_v2).
     This template has one body placeholder {{1}}, so we must supply exactly one non-empty string.
     """
-    greeting_name = "there"  # Replace with actual user name if desired
+    # You can replace "there" with the actual name if you store it, e.g. user_name
+    greeting_name = "there"
     resp = send_template_message(
         to=to,
         template_name="main_menu_v2",
@@ -316,17 +316,17 @@ def send_day_selection_prompt(to: str, phone_number_id: str):
 def send_time_selection_prompt(to: str, phone_number_id: str, chosen_date: str):
     """
     Step 2: Ask the user which time slot or a custom time.
-    `chosen_date` is either "today", "tomorrow" or a user‐typed "YYYY-MM-DD".
+    `chosen_date` is either "today", "tomorrow" or a user-typed "DD-MM-YYYY".
     We store it in state so we can attach it later.
     """
-    # 1) Store the chosen_date in state
+    # 1) Store the chosen_date in state, so we can read it later
     state = get_user_state("carfum", to) or {}
     state["appointment_date"] = chosen_date
     set_user_state("carfum", to, state)
 
     # 2) Build the interactive button prompt for time
     text = (
-        f"You chose *{chosen_date.title()}* for your appointment.\n\n"
+        f"You chose *{chosen_date}* for your appointment.\n\n"
         "What time of day works best?\n"
         "• Morning (09:00–12:00)\n"
         "• Afternoon (12:00–17:00)\n"
@@ -453,15 +453,14 @@ def send_quote_summary(to: str, phone_number_id: str):
 # ------------------------------------------------------------------------------
 def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict):
     """
-    1) Decide whether this is a quick-reply button (top-level "button" or nested "interactive.button_reply"),
-       an interactive list reply, or plain text for "collect" steps.
-    2) Extract the payload/text.
+    1) Determine whether this is a quick-reply button (message["type"] == "button" or nested "interactive.button_reply"),
+       an interactive list reply, or plain text (for "collect_..." steps).
+    2) Extract the payload/text, compare to the current `user_state["step"]`.
     3) Update Redis state accordingly.
     4) Call the next send_*() function to continue the flow.
     """
-
     prefix = "carfum"
-    msg_type = message.get("type")
+    msg_type = message.get("type")  # "text", "button", or "interactive"
 
     # ─── Helper to extract quick-reply payload ───
     def extract_button_payload(msg: dict) -> str:
@@ -486,7 +485,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             state = user_state or {}
             step = state.get("step")
 
-            # A) "Need help on Pest!" from main menu
+            # A) “Need help on Pest!” from main menu
             if payload_lower == "need help on pest!":
                 clear_user_state(prefix, from_number)
                 new_state = {"step": "choose_service"}
@@ -497,7 +496,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 )
                 return
 
-            # B) "More Info on Service" at any point
+            # B) “More Info on Service” at any point
             if payload_lower in ["more info on service", "fumigation_faq"]:
                 send_text_message(
                     to=from_number,
@@ -509,7 +508,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 )
                 return
 
-            # C) "Return to Main Menu"
+            # C) “Return to Main Menu”
             if payload_lower in ["return to main menu", "return_main_menu"]:
                 clear_user_state(prefix, from_number)
                 send_main_menu(
@@ -518,7 +517,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 )
                 return
 
-            # D) "Yes"/"Book Now" on quote summary → Ask “Which Day?”
+            # D) “Yes”/“Book Now” on quote summary → Ask “Which Day?”
             if step == "show_quote_summary" and payload_lower in ["book_appointment", "yes", "car_fum_confirm_yes"]:
                 state["step"] = "collect_day_option"
                 set_user_state(prefix, from_number, state)
@@ -528,7 +527,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 )
                 return
 
-            # E) "No" on final quote summary → back to quote summary
+            # E) “No” on final quote summary → back to quote summary
             if step == "show_quote_summary" and payload_lower in ["no", "return_to_quote", "car_fum_confirm_no"]:
                 state["step"] = "select_location"
                 set_user_state(prefix, from_number, state)
@@ -541,37 +540,40 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             # F) “Which Day?” step = collect_day_option
             if step == "collect_day_option" and payload_lower in ["day_today", "day_tomorrow", "day_pick"]:
                 if payload_lower == "day_today":
-                    today_str = datetime.now().strftime("%Y-%m-%d")
+                    # Store “today” in DD-MM-YYYY
+                    today_str = datetime.now().strftime("%d-%m-%Y")
                     state["appointment_date"] = today_str
                     state["step"] = "collect_time_option"
                     set_user_state(prefix, from_number, state)
                     send_time_selection_prompt(
                         to=from_number,
                         phone_number_id=os.getenv("PHONE_NUMBER_ID"),
-                        chosen_date="today"
+                        chosen_date=today_str
                     )
                     return
 
                 if payload_lower == "day_tomorrow":
-                    tomorrow_str = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+                    tomorrow = datetime.now() + timedelta(days=1)
+                    tomorrow_str = tomorrow.strftime("%d-%m-%Y")
                     state["appointment_date"] = tomorrow_str
                     state["step"] = "collect_time_option"
                     set_user_state(prefix, from_number, state)
                     send_time_selection_prompt(
                         to=from_number,
                         phone_number_id=os.getenv("PHONE_NUMBER_ID"),
-                        chosen_date="tomorrow"
+                        chosen_date=tomorrow_str
                     )
                     return
 
                 if payload_lower == "day_pick":
+                    # Ask for a typed date in DD-MM-YYYY
                     state["step"] = "collect_custom_date_text"
                     set_user_state(prefix, from_number, state)
                     send_text_message(
                         to=from_number,
                         body=(
-                            "Please type your preferred date in `YYYY-MM-DD` format.\n"
-                            "For example: `2025-06-10`"
+                            "Please type your preferred date in `DD-MM-YYYY` format.  \n"
+                            "For example: `11-06-2025`"
                         )
                     )
                     return
@@ -590,7 +592,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                     send_text_message(
                         to=from_number,
                         body=(
-                            "Please type your preferred time in HH:MM (24-hour) or HH:MMam/pm (12-hour). "
+                            "Please type your preferred time in HH:MM (24-hour) or HH:MMam/pm (12-hour).  \n"
                             "For example: `15:30` or `3:30pm`"
                         )
                     )
@@ -740,7 +742,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
         state = user_state or {}
         step = state.get("step")
         text_body = message["text"]["body"].strip()
-        print(f"[DEBUG] handle_car_fumIGATION_FLOW: TEXT at step='{step}': '{text_body}' from {from_number}")
+        print(f"[DEBUG] handle_car_fumigation_flow: TEXT at step='{step}': '{text_body}' from {from_number}")
 
         # A) collect_other_pest_text
         if step == "collect_other_pest_text":
@@ -764,12 +766,13 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             )
             return
 
-        # C) collect_custom_date_text (user enters YYYY-MM-DD)
+        # C) collect_custom_date_text (user enters DD-MM-YYYY)
         if step == "collect_custom_date_text":
             user_date = text_body
             try:
-                # Validate YYYY-MM-DD format
-                parsed = datetime.strptime(user_date, "%Y-%m-%d")
+                # Validate DD-MM-YYYY
+                parsed = datetime.strptime(user_date, "%d-%m-%Y")
+                # If successful, store in that exact format
                 state["appointment_date"] = user_date
                 state["step"] = "collect_time_option"
                 set_user_state(prefix, from_number, state)
@@ -781,21 +784,26 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             except ValueError:
                 send_text_message(
                     to=from_number,
-                    body="Sorry, I couldn’t parse that date. Please use `YYYY-MM-DD`, e.g. `2025-06-10`."
+                    body="Sorry, I couldn’t parse that date. Please use `DD-MM-YYYY`, e.g. `11-06-2025`."
                 )
             return
 
         # D) collect_custom_time_text (user enters free-form time)
         if step == "collect_custom_time_text":
-            user_time = text_body
-            # Try parsing “HH:MM” (24-hour) or “H:MMam/pm” or “HH:MMam/pm”
+            user_time = text_body.strip().upper().replace(" ", "")
             parsed_time = None
-            for fmt in ("%H:%M", "%I:%M%p", "%I:%M%P"):
-                try:
-                    parsed_time = datetime.strptime(user_time.upper().replace(" ", ""), fmt).time()
-                    break
-                except Exception:
-                    continue
+
+            # Try parsing “HH:MM” (24-hour)
+            try:
+                parsed_time = datetime.strptime(user_time, "%H:%M").time()
+            except Exception:
+                # Try parsing “H:MMAM/PM” or “HH:MMAM/PM”
+                for fmt in ("%I:%M%p", "%I:%M%P"):
+                    try:
+                        parsed_time = datetime.strptime(user_time, fmt).time()
+                        break
+                    except Exception:
+                        continue
 
             if parsed_time is None:
                 send_text_message(
@@ -827,10 +835,11 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
         if step == "collect_final_details":
             state["final_details"] = text_body
             # Now we have:
-            #   state["appointment_date"]   (YYYY-MM-DD)
+            #   state["appointment_date"]   (DD-MM-YYYY)
             #   state["appointment_time"]   (HH:MM)
             #   state["final_details"]      (Vehicle Model/Number/Location)
             clear_user_state(prefix, from_number)
+
             send_text_message(
                 to=from_number,
                 body=(

@@ -82,9 +82,11 @@ def receive_message():
         # 1) If it's a plain text message:
         if msg_type == "text":
             text_body = message["text"]["body"].strip().lower()
+            print(f"[DEBUG] Received TEXT from {from_number}: '{text_body}'")
 
             # If user types "reset" → clear state and send main menu
             if text_body == "reset":
+                print(f"[DEBUG] 'reset' detected for {from_number}. Clearing state and sending main menu.")
                 clear_user_state(REDIS_PREFIX, from_number)
                 car_fumigation.send_main_menu(
                     to=from_number,
@@ -98,6 +100,7 @@ def receive_message():
 
             # If user typed "menu" or there is no existing state → send main menu
             if text_body == "menu" or not current_step:
+                print(f"[DEBUG] Sending main menu to {from_number} (text_body='{text_body}', current_step={current_step})")
                 clear_user_state(REDIS_PREFIX, from_number)
                 car_fumigation.send_main_menu(
                     to=from_number,
@@ -107,6 +110,7 @@ def receive_message():
 
             # If we do have a state, delegate to Car Fumigation flow
             if state:
+                print(f"[DEBUG] Delegating to handle_car_fumigation_flow for {from_number}, step={current_step}")
                 car_fumigation.handle_car_fumigation_flow(
                     from_number=from_number,
                     message=message,
@@ -119,6 +123,7 @@ def receive_message():
                 "Sorry, I didn’t understand that. "
                 "Please tap 'Need help on Pest!' or type 'menu' to see options again."
             )
+            print(f"[DEBUG] No state & unrecognized text for {from_number}: '{text_body}'. Sending fallback.")
             send_template_message(
                 to=from_number,
                 template_name=ECHO_TEMPLATE,
@@ -128,6 +133,7 @@ def receive_message():
 
         # 2) If it's an interactive reply (button or list):
         elif msg_type == "interactive":
+            print(f"[DEBUG] Received INTERACTIVE payload from {from_number}: {json.dumps(message)}")
             # Fetch existing state
             state = get_user_state(REDIS_PREFIX, from_number)
 
@@ -145,6 +151,7 @@ def receive_message():
                 "Sorry, I can’t handle that type of message. "
                 "Please tap 'Need help on Pest!' or type 'menu'."
             )
+            print(f"[DEBUG] Received unsupported msg_type='{msg_type}' from {from_number}. Sending fallback.")
             send_template_message(
                 to=from_number,
                 template_name=ECHO_TEMPLATE,

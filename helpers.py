@@ -12,6 +12,7 @@ WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
 TEMPLATE_NAMESPACE = os.getenv("TEMPLATE_NAMESPACE")
 REDIS_URL = os.getenv("REDIS_URL")
 
+# Initialize Redis client
 r = redis.StrictRedis.from_url(REDIS_URL, decode_responses=True)
 
 # ===========================
@@ -29,6 +30,7 @@ def set_user_state(prefix: str, user_id: str, state: dict):
 def clear_user_state(prefix: str, user_id: str):
     key = f"{prefix}:{user_id}"
     r.delete(key)
+
 
 # ===================================
 # 360dialog/Meta HTTP‐Request Functions
@@ -69,10 +71,19 @@ def send_template_message(to: str, template_name: str, template_params=None):
         }
     }
 
+    # --- DEBUG OUTPUT ---
+    print("→ [DEBUG] send_template_message payload:")
+    print(json.dumps(body, indent=2))
     resp = requests.post(url, headers=headers, json=body)
-    if resp.status_code not in (200, 201):
-        print(f"[send_template_message] Error {resp.status_code}: {resp.text}")
+    print(f"← [DEBUG] 360dialog HTTP {resp.status_code} response:")
+    try:
+        print(resp.json())
+    except Exception:
+        print(resp.text)
+    # --- END DEBUG ---
+
     return resp.json()
+
 
 def send_interactive_message(payload: dict):
     """
@@ -88,10 +99,19 @@ def send_interactive_message(payload: dict):
     # Ensure "messaging_product": "whatsapp" is present
     payload.setdefault("messaging_product", "whatsapp")
 
+    # --- DEBUG OUTPUT ---
+    print("→ [DEBUG] send_interactive_message payload:")
+    print(json.dumps(payload, indent=2))
     resp = requests.post(url, headers=headers, json=payload)
-    if resp.status_code not in (200, 201):
-        print(f"[send_interactive_message] Error {resp.status_code}: {resp.text}")
+    print(f"← [DEBUG] 360dialog HTTP {resp.status_code} response:")
+    try:
+        print(resp.json())
+    except Exception:
+        print(resp.text)
+    # --- END DEBUG ---
+
     return resp.json()
+
 
 def send_text_message(to: str, body: str):
     """
@@ -110,7 +130,16 @@ def send_text_message(to: str, body: str):
         "type": "text",
         "text": {"body": body}
     }
+
+    # --- DEBUG OUTPUT ---
+    print("→ [DEBUG] send_text_message payload:")
+    print(json.dumps(payload, indent=2))
     resp = requests.post(url, headers=headers, json=payload)
-    if resp.status_code not in (200, 201):
-        print(f"[send_text_message] Error {resp.status_code}: {resp.text}")
+    print(f"← [DEBUG] 360dialog HTTP {resp.status_code} response:")
+    try:
+        print(resp.json())
+    except Exception:
+        print(resp.text)
+    # --- END DEBUG ---
+
     return resp.json()

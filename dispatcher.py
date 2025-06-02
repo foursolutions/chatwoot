@@ -1,3 +1,5 @@
+# dispatcher.py
+
 import os
 import json
 from flask import Flask, request, make_response
@@ -17,7 +19,7 @@ app = Flask(__name__)
 #  Environment variables (must be set in Heroku config vars)
 # ------------------------------------------------------------------------------
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")       # Your webhook verification token
-PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID") # Only needed if your flows refer to it
+PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID") # Used by send_* functions as needed
 
 # Redis key prefix for Car Fumigation user states
 REDIS_PREFIX = "carfum"
@@ -88,7 +90,10 @@ def receive_message():
             # If user typed "menu" or there is no existing state → send main menu
             if text_body == "menu" or not current_step:
                 clear_user_state(REDIS_PREFIX, from_number)
-                car_fumigation.send_main_menu(to=from_number)
+                car_fumigation.send_main_menu(
+                    to=from_number,
+                    phone_number_id=PHONE_NUMBER_ID
+                )
                 return make_response("Main menu sent", 200)
 
             # If we do have a state, delegate to Car Fumigation flow

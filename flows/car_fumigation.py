@@ -1,3 +1,5 @@
+# flows/car_fumigation.py
+
 import os
 import requests
 from helpers import (
@@ -16,7 +18,13 @@ def send_main_menu(to: str, phone_number_id: str):
     """
     Sends the top‐level main menu template (main_menu).
     """
-    send_template_message(to, template_name="main_menu", template_params=[])
+    # Capture the response from 360dialog so we can debug it
+    resp = send_template_message(
+        to=to,
+        template_name="main_menu",
+        template_params=[]
+    )
+    print(f"[DEBUG] send_main_menu → 360dialog response: {resp}")
 
 
 # ===========================================================

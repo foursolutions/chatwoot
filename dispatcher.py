@@ -83,6 +83,15 @@ def receive_message():
         if msg_type == "text":
             text_body = message["text"]["body"].strip().lower()
 
+            # If user types "reset" → clear state and send main menu
+            if text_body == "reset":
+                clear_user_state(REDIS_PREFIX, from_number)
+                car_fumigation.send_main_menu(
+                    to=from_number,
+                    phone_number_id=PHONE_NUMBER_ID
+                )
+                return make_response("Reset: Main menu sent", 200)
+
             # Fetch any existing user state from Redis
             state = get_user_state(REDIS_PREFIX, from_number)
             current_step = state.get("step")
@@ -105,7 +114,7 @@ def receive_message():
                 )
                 return make_response("Flow step handled", 200)
 
-            # No valid state and not "menu" → catch-all fallback
+            # No valid state and not "menu" or "reset" → catch-all fallback
             catchall_text = (
                 "Sorry, I didn’t understand that. "
                 "Please tap 'Need help on Pest!' or type 'menu' to see options again."

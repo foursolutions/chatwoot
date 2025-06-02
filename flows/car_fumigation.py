@@ -170,7 +170,6 @@ def send_car_fum_appointment_confirmation(to: str, phone_number_id: str,
     """
     Alias for send_car_fum_quote_summary. Used by dispatcher in Step 13.
     """
-    # Reuse the same template (car_fum_appointment_confirmation)
     send_car_fum_quote_summary(
         to=to,
         phone_number_id=phone_number_id,
@@ -329,12 +328,12 @@ def calculate_quote(state: dict) -> float:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-#  X) Universal flow‐handler stub. Dispatcher will call this on every
-#     interactive (list) or button payload.
+#  X) Universal flow‐handler. Dispatcher calls this on every
+#     interactive (list) or button payload (or text at collect_datetime).
 # ──────────────────────────────────────────────────────────────────────────────
 def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict):
     """
-    1) Decide whether this is a quick‐reply button or an interactive list reply.
+    1) Decide whether this is a quick‐reply button, a list reply, or text for datetime.
     2) Read the payload or button text.
     3) Update Redis state accordingly.
     4) Call the next send_*() function to continue the flow.
@@ -345,38 +344,32 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
 
     # ─── 1) Handle quick‐reply buttons ───
     if msg_type == "button":
-        payload = message["button"]["payload"]  # e.g., "Need help on Pest!" or "Request a Quotation"
+        payload = message["button"]["payload"]  # e.g., "Need help on Pest!" or "Yes", "No"
         print(f"[DEBUG] handle_car_fumigation_flow: BUTTON payload='{payload}' from {from_number}")
 
-        # ---- A) If user tapped “Need help on Pest!” on main_menu_v2 ----
+        # ---- A) “Need help on Pest!” on main_menu_v2 ----
         if payload.lower() == "need help on pest!":
-            # Clear any old state
             clear_user_state(prefix, from_number)
-
-            # Set new state to indicate we’re in the “choose pest service” step
             new_state = {"step": "choose_service"}
             set_user_state(prefix, from_number, new_state)
-
-            # Send the interactive list of pest control services
             send_pest_control_list(
                 to=from_number,
                 phone_number_id=os.getenv("PHONE_NUMBER_ID")
             )
             return
 
-        # ---- B) If user tapped “Request a Quotation” on car_fum_menu ----
-        elif payload.lower() == "request a quotation" or payload.lower() == "car_fum_quote":
+        # ---- B) “Request a Quotation” on car_fum_menu ----
+        elif payload.lower() in ["request a quotation", "car_fum_quote"]:
             state = user_state or {}
             state["step"] = "select_appointment_method"
             set_user_state(prefix, from_number, state)
-
             send_car_fum_appointment_method(
                 to=from_number,
                 phone_number_id=os.getenv("PHONE_NUMBER_ID")
             )
             return
 
-        # ---- C) If user tapped “More Info on Service” on car_fum_menu or quote_options ----
+        # ---- C) “More Info on Service” on car_fum_menu or quote_options ----
         elif payload.lower() in ["more info on service", "car_fum_info"]:
             send_text_message(
                 to=from_number,
@@ -388,8 +381,8 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             )
             return
 
-        # ---- D) If user tapped “Return to Main Menu” ----
-        elif payload.lower() == "return to main menu" or payload.lower() == "return_main_menu":
+        # ---- D) “Return to Main Menu” ----
+        elif payload.lower() in ["return to main menu", "return_main_menu"]:
             clear_user_state(prefix, from_number)
             send_main_menu(
                 to=from_number,
@@ -397,34 +390,98 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             )
             return
 
-        # ---- E) If user tapped “ASAP” vs “Schedule” in appointment method ----
+        # ---- E) “ASAP” in appointment method ----
         elif payload.lower() in ["asap", "car_fum_asap"]:
-            # Immediately book for 'today' (e.g., use a default or ask for details).
             state = user_state or {}
             state["step"] = "select_pest_type"
-            # Example: you might store preferred_dt = "ASAP" or a timestamp here
             state["preferred_dt"] = "ASAP"
             set_user_state(prefix, from_number, state)
-
-            # Now ask for pest type in vehicle
             send_pest_type_list(
                 to=from_number,
                 phone_number_id=os.getenv("PHONE_NUMBER_ID")
             )
             return
 
+        # ---- F) “Schedule” in appointment method ----
         elif payload.lower() in ["schedule", "car_fum_schedule"]:
-            # Ask the user to type a date/time manually
             state = user_state or {}
             state["step"] = "collect_datetime"
             set_user_state(prefix, from_number, state)
-
             send_text_message(
                 to=from_number,
                 body="Sure! Please reply with your preferred date/time (YYYY‐MM‐DD HH:MM)."
             )
             return
 
+        # ---- G) “Yes” on quote confirmation ----
+        elif payload.lower() in ["yes", "car_fum_confirm_yes"]:
+            # User confirmed. Connect to live agent and send FAQ.
+            clear_user_state(prefix, from_number)
+
+            # 1) Send a message indicating connection to a live agent:
+            send_text_message(
+                to=from_number,
+                body=(
+                    "Great! We're connecting you to a live agent now. "
+                    "In the meantime, here is our Car Fumigation FAQ:"
+                )
+            )
+
+            # 2) Send a simple FAQ as a text message (you can replace below with your actual FAQ content):
+            faq_text = (
+                "Car Fumigation FAQ:\n\n"
+                "1. What is car fumigation?\n"
+                "   - A process that uses non‐oily fog to eliminate pests in your vehicle.\n\n"
+                "2. How long does it take?\n"
+                "   - Usually 45‐60 minutes, depending on the vehicle size.\n\n"
+                "3. Is it safe for upholstery?\n"
+                "   - Yes, our chemicals are safe for fabrics and electronics.\n\n"
+                "4. Do I need to remove personal items?\n"
+                "   - We recommend removing loose items before fumigation.\n\n"
+                "5. How soon can I drive after fumigation?\n"
+                "   - You can drive immediately after the fog disperses (~5‐10 min).\n\n"
+                "If you have further questions, type 'reset' at any time or wait for our agent."
+            )
+            send_text_message(
+                to=from_number,
+                body=faq_text
+            )
+            return
+
+        # ---- H) “No” on quote confirmation ----
+        elif payload.lower() in ["no", "car_fum_confirm_no"]:
+            # User wants to revise details. Take them back to the quote summary:
+            state = user_state or {}
+            state["step"] = "select_location"  # go back one step
+            set_user_state(prefix, from_number, state)
+
+            # Re‐compute and re‐send the quote summary exactly as before:
+            # (We assume state still has pest_type, vehicle_type, location, preferred_dt)
+            quote_amount = calculate_quote(state)
+            quote_text = f"SGD {quote_amount:.2f}"
+            pest_label = state["pest_type"].capitalize()
+            dt_label = state.get("preferred_dt", "ASAP")
+            location_label_map = {
+                "north_zone": "North Zone",
+                "south_zone": "South Zone",
+                "east_zone": "East Zone",
+                "west_zone": "West Zone"
+            }
+            location_label = location_label_map.get(state["location"], state["location"])
+            vehicle_label = state["vehicle_type"].upper()
+
+            send_car_fum_quote_summary(
+                to=from_number,
+                phone_number_id=os.getenv("PHONE_NUMBER_ID"),
+                estimated_total=quote_text,
+                pest_reported=pest_label,
+                preferred_dt=dt_label,
+                parking_address=location_label,
+                vehicle_desc=vehicle_label
+            )
+            return
+
+        # ---- I) Unhandled button payload
         else:
             print(f"[DEBUG] Unhandled BUTTON payload: '{payload}'")
             send_text_message(
@@ -441,7 +498,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
         state = user_state or {}
         step = state.get("step")
 
-        # ---- A) If we’re in “choose_service”, user saw the Pest Control Services list ----
+        # ---- A) “choose_service”: Pest Control Services list reply ----
         if step == "choose_service":
             selected_id = interactive_payload["list_reply"]["id"]  # e.g., "car_fumigation"
             print(f"[DEBUG] Selected pest service: '{selected_id}'")
@@ -449,7 +506,6 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             if selected_id == "car_fumigation":
                 state["step"] = "car_fum_menu"
                 set_user_state(prefix, from_number, state)
-
                 send_car_fum_menu(
                     to=from_number,
                     phone_number_id=os.getenv("PHONE_NUMBER_ID")
@@ -470,7 +526,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 )
                 return
 
-        # ---- B) If we’re in “select_pest_type”, user saw the Pest Type list ----
+        # ---- B) “select_pest_type”: Pest Type list reply ----
         elif step == "select_pest_type":
             pest_choice = interactive_payload["list_reply"]["id"]  # e.g., "cockroach"
             print(f"[DEBUG] Selected pest type: '{pest_choice}'")
@@ -485,7 +541,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             )
             return
 
-        # ---- C) If we’re in “select_vehicle_type”, user saw Vehicle Type list ----
+        # ---- C) “select_vehicle_type”: Vehicle Type list reply ----
         elif step == "select_vehicle_type":
             vehicle_choice = interactive_payload["list_reply"]["id"]  # e.g., "suv"
             print(f"[DEBUG] Selected vehicle type: '{vehicle_choice}'")
@@ -500,7 +556,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             )
             return
 
-        # ---- D) If we’re in “select_location”, user saw Location list ----
+        # ---- D) “select_location”: Service Zone list reply ----
         elif step == "select_location":
             location_choice = interactive_payload["list_reply"]["id"]  # e.g., "east_zone"
             print(f"[DEBUG] Selected location: '{location_choice}'")
@@ -509,11 +565,9 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             state["step"] = "show_quote_summary"
             set_user_state(prefix, from_number, state)
 
-            # Now compute the quote
-            quote_amount = calculate_quote(state)  # e.g., 65.0
+            # Compute quote
+            quote_amount = calculate_quote(state)
             quote_text = f"SGD {quote_amount:.2f}"
-
-            # Build the human‐readable labels for the summary
             pest_label = state["pest_type"].capitalize()
             dt_label = state.get("preferred_dt", "ASAP")
             location_label_map = {
@@ -546,19 +600,17 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
 
     # ─── 3) Handle plain‐text replies at “collect_datetime” step ───
     elif msg_type == "text":
-        # Example: user typed a date/time string when state["step"] == "collect_datetime"
         state = user_state or {}
         step = state.get("step")
         text_body = message["text"]["body"].strip()
         print(f"[DEBUG] handle_car_fumigation_flow: TEXT at step='{step}': '{text_body}' from {from_number}")
 
         if step == "collect_datetime":
-            # Save the user’s preferred date/time
+            # Save user’s preferred date/time
             state["preferred_dt"] = text_body
             state["step"] = "select_pest_type"
             set_user_state(prefix, from_number, state)
 
-            # Ask for pest type in vehicle
             send_pest_type_list(
                 to=from_number,
                 phone_number_id=os.getenv("PHONE_NUMBER_ID")
@@ -566,7 +618,6 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             return
 
         else:
-            # If it’s a text outside of expected “collect_datetime” step, fallback
             send_text_message(
                 to=from_number,
                 body="Sorry, I didn’t understand that. Type 'reset' to start over."

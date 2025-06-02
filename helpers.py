@@ -12,7 +12,6 @@ WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
 TEMPLATE_NAMESPACE = os.getenv("TEMPLATE_NAMESPACE")
 REDIS_URL = os.getenv("REDIS_URL")
 
-# Initialize Redis client
 r = redis.StrictRedis.from_url(REDIS_URL, decode_responses=True)
 
 # ===========================

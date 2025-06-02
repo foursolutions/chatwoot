@@ -1,5 +1,3 @@
-# dispatcher.py
-
 import os
 import json
 from flask import Flask, request, make_response
@@ -33,6 +31,13 @@ ECHO_TEMPLATE = "echo_message_text"
 # ------------------------------------------------------------------------------
 @app.route("/webhook", methods=["GET"])
 def verify_webhook():
+    """
+    Webhook verification endpoint. Meta/WhatsApp will call this with:
+      - hub.mode
+      - hub.verify_token
+      - hub.challenge
+    We must echo back the “hub.challenge” if the token matches VERIFY_TOKEN.
+    """
     mode = request.args.get("hub.mode")
     token = request.args.get("hub.verify_token")
     challenge = request.args.get("hub.challenge")
@@ -48,14 +53,23 @@ def verify_webhook():
 # ------------------------------------------------------------------------------
 @app.route("/webhook", methods=["POST"])
 def receive_message():
+    """
+    Handle incoming WhatsApp messages sent via 360dialog:
+      - Text messages
+      - Interactive replies (list or quick‐reply button)
+      - Other types (we fallback if unsupported)
+    We delegate Car Fumigation logic to flows/car_fumigation.handle_car_fumigation_flow.
+    """
     payload = request.get_json()
 
     try:
+        # Drill down into the WhatsApp payload structure:
         entry = payload.get("entry", [])[0]
         changes = entry.get("changes", [])[0]
         value = changes.get("value", {})
         messages = value.get("messages", [])
 
+        # If there are no messages, just return 200
         if not messages:
             return make_response("No messages to process", 200)
 
@@ -115,7 +129,7 @@ def receive_message():
             )
             return make_response("Echo fallback sent", 200)
 
-        # 2) If it's an interactive list reply or list menu:
+        # 2) If it's an interactive list reply (msg_type == "interactive"):
         elif msg_type == "interactive":
             print(f"[DEBUG] Received INTERACTIVE payload from {from_number}: {json.dumps(message)}")
             state = get_user_state(REDIS_PREFIX, from_number)
@@ -126,7 +140,7 @@ def receive_message():
             )
             return make_response("Interactive reply handled", 200)
 
-        # 3) If it's a quick-reply button (360dialog sends type="button"):
+        # 3) If it's a quick‐reply button (msg_type == "button"):
         elif msg_type == "button":
             print(f"[DEBUG] Received BUTTON payload from {from_number}: {json.dumps(message)}")
             state = get_user_state(REDIS_PREFIX, from_number)

@@ -1,7 +1,6 @@
-# flows/car_fumigation.py
-
 import os
 import requests
+import json
 from helpers import (
     get_user_state,
     set_user_state,
@@ -19,13 +18,11 @@ def send_main_menu(to: str, phone_number_id: str):
     Sends the top‐level main menu template (main_menu_v2).
     This template has one body placeholder {{1}}, so we must supply exactly one non‐empty string.
     """
-    # You can replace "there" with a real username if you have it,
-    # or something generic like "Friend" or "there".
-    greeting_name = "there"
+    greeting_name = "there"  # Replace "there" with a real username if you prefer
     resp = send_template_message(
         to=to,
-        template_name="main_menu_v2",     # ← use the exact template name from 360dialog
-        template_params=[greeting_name]   # ← one non‐empty string for {{1}}
+        template_name="main_menu_v2",     # Exactly match your template name in 360dialog
+        template_params=[greeting_name]   # One non‐empty string for {{1}}
     )
     print(f"[DEBUG] send_main_menu → 360dialog response: {resp}")
 
@@ -41,6 +38,7 @@ def send_pest_control_list(to: str, phone_number_id: str):
     payload = {
         "to": to,
         "type": "interactive",
+        "messaging_product": "whatsapp",
         "interactive": {
             "type": "list",
             "header": {"type": "text", "text": "Pest Control Services"},
@@ -65,7 +63,8 @@ def send_pest_control_list(to: str, phone_number_id: str):
             }
         }
     }
-    send_interactive_message(payload)
+    resp = send_interactive_message(payload)
+    print(f"[DEBUG] send_pest_control_list → 360dialog response: {resp}")
 
 
 # ===========================================================
@@ -78,7 +77,12 @@ def send_car_fum_menu(to: str, phone_number_id: str):
       - "car_fum_info"
       - "return_main_menu"
     """
-    send_template_message(to, template_name="car_fum_menu", template_params=[])
+    resp = send_template_message(
+        to=to,
+        template_name="car_fum_menu",
+        template_params=[]
+    )
+    print(f"[DEBUG] send_car_fum_menu → 360dialog response: {resp}")
 
 
 # ===========================================================
@@ -91,7 +95,12 @@ def send_car_fum_quote_options(to: str, phone_number_id: str):
       - "car_fum_info"
       - "return_main_menu"
     """
-    send_template_message(to, template_name="car_fum_quote_options", template_params=[])
+    resp = send_template_message(
+        to=to,
+        template_name="car_fum_quote_options",
+        template_params=[]
+    )
+    print(f"[DEBUG] send_car_fum_quote_options → 360dialog response: {resp}")
 
 
 # ==========================================================
@@ -103,7 +112,12 @@ def send_car_fum_appointment_method(to: str, phone_number_id: str):
       - "car_fum_asap"
       - "car_fum_schedule"
     """
-    send_template_message(to, template_name="car_fum_appointment_method", template_params=[])
+    resp = send_template_message(
+        to=to,
+        template_name="car_fum_appointment_method",
+        template_params=[]
+    )
+    print(f"[DEBUG] send_car_fum_appointment_method → 360dialog response: {resp}")
 
 
 # =============================================================================
@@ -134,11 +148,12 @@ def send_car_fum_quote_summary(to: str, phone_number_id: str,
         {"type": "text", "text": parking_address},
         {"type": "text", "text": vehicle_desc}
     ]
-    send_template_message(
-        to,
+    resp = send_template_message(
+        to=to,
         template_name="car_fum_appointment_confirmation",
         template_params=[p["text"] for p in params]
     )
+    print(f"[DEBUG] send_car_fum_quote_summary → 360dialog response: {resp}")
 
 
 # =============================================================================
@@ -179,6 +194,7 @@ def send_pest_type_list(to: str, phone_number_id: str):
     payload = {
         "to": to,
         "type": "interactive",
+        "messaging_product": "whatsapp",
         "interactive": {
             "type": "list",
             "header": {"type": "text", "text": "Select Pest Type"},
@@ -200,7 +216,8 @@ def send_pest_type_list(to: str, phone_number_id: str):
             }
         }
     }
-    send_interactive_message(payload)
+    resp = send_interactive_message(payload)
+    print(f"[DEBUG] send_pest_type_list → 360dialog response: {resp}")
 
 
 # ============================================================
@@ -217,6 +234,7 @@ def send_vehicle_type_list(to: str, phone_number_id: str):
     payload = {
         "to": to,
         "type": "interactive",
+        "messaging_product": "whatsapp",
         "interactive": {
             "type": "list",
             "header": {"type": "text", "text": "Select Vehicle Type"},
@@ -238,7 +256,8 @@ def send_vehicle_type_list(to: str, phone_number_id: str):
             }
         }
     }
-    send_interactive_message(payload)
+    resp = send_interactive_message(payload)
+    print(f"[DEBUG] send_vehicle_type_list → 360dialog response: {resp}")
 
 
 # ===========================================================
@@ -255,6 +274,7 @@ def send_location_list(to: str, phone_number_id: str):
     payload = {
         "to": to,
         "type": "interactive",
+        "messaging_product": "whatsapp",
         "interactive": {
             "type": "list",
             "header": {"type": "text", "text": "Select Service Zone"},
@@ -276,7 +296,8 @@ def send_location_list(to: str, phone_number_id: str):
             }
         }
     }
-    send_interactive_message(payload)
+    resp = send_interactive_message(payload)
+    print(f"[DEBUG] send_location_list → 360dialog response: {resp}")
 
 
 # ============================================================
@@ -303,3 +324,140 @@ def calculate_quote(state: dict) -> float:
         surcharges += 10
 
     return base + surcharges
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+#  X) Universal flow‐handler stub. Dispatcher will call this on every
+#     interactive (list) or button payload.
+# ──────────────────────────────────────────────────────────────────────────────
+def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict):
+    """
+    1) Decide whether this is a quick‐reply button or an interactive list reply.
+    2) Read the payload or button text.
+    3) Update Redis state accordingly.
+    4) Call the next send_*() function to continue the flow.
+    """
+
+    prefix = "carfum"
+    msg_type = message.get("type")
+
+    # ─── 1) Handle quick‐reply buttons ───
+    if msg_type == "button":
+        payload = message["button"]["payload"]  # e.g., "Need help on Pest!" or "car_fum_quote"
+        print(f"[DEBUG] handle_car_fumigation_flow: BUTTON payload='{payload}' from {from_number}")
+
+        # ---- A) If user tapped “Need help on Pest!” on main_menu_v2 ----
+        if payload.lower() == "need help on pest!":
+            # Clear any old state
+            clear_user_state(prefix, from_number)
+
+            # Set new state to indicate we’re in the “choose pest service” step
+            new_state = {"step": "choose_service"}
+            set_user_state(prefix, from_number, new_state)
+
+            # Send the interactive list of pest control services
+            send_pest_control_list(
+                to=from_number,
+                phone_number_id=os.getenv("PHONE_NUMBER_ID")
+            )
+            return
+
+        # ---- B) If user tapped “Get Quote” on car_fum_menu ----
+        elif payload.lower() in ["get quote", "car_fum_quote"]:
+            state = user_state or {}
+            state["step"] = "select_quote_option"
+            set_user_state(prefix, from_number, state)
+
+            send_car_fum_quote_options(
+                to=from_number,
+                phone_number_id=os.getenv("PHONE_NUMBER_ID")
+            )
+            return
+
+        # ---- C) If user tapped “car_fum_info” on car_fum_menu ----
+        elif payload.lower() == "car_fum_info":
+            send_text_message(
+                to=from_number,
+                body=(
+                    "Our car fumigation service uses non‐oily fogging. "
+                    "Prices start at SGD 50 for a basic treatment. "
+                    "Type 'reset' to go back anytime."
+                )
+            )
+            return
+
+        # ---- D) If user tapped “Return Main Menu” ----
+        elif payload.lower() == "return_main_menu":
+            clear_user_state(prefix, from_number)
+            send_main_menu(
+                to=from_number,
+                phone_number_id=os.getenv("PHONE_NUMBER_ID")
+            )
+            return
+
+        else:
+            print(f"[DEBUG] Unhandled BUTTON payload: '{payload}'")
+            send_text_message(
+                to=from_number,
+                body="Sorry, I didn’t understand that button. Type 'reset' to start over."
+            )
+            return
+
+    # ─── 2) Handle interactive list replies ───
+    elif msg_type == "interactive":
+        interactive_payload = message["interactive"]
+        print(f"[DEBUG] handle_car_fumigation_flow: INTERACTIVE payload='{json.dumps(interactive_payload)}' from {from_number}")
+
+        state = user_state or {}
+        step = state.get("step")
+
+        # ---- A) If we’re in “choose_service”, user saw the Pest Control Services list ----
+        if step == "choose_service":
+            selected_id = interactive_payload["list_reply"]["id"]  # e.g., "car_fumigation"
+            print(f"[DEBUG] Selected pest service: '{selected_id}'")
+
+            if selected_id == "car_fumigation":
+                state["step"] = "car_fum_menu"
+                set_user_state(prefix, from_number, state)
+
+                send_car_fum_menu(
+                    to=from_number,
+                    phone_number_id=os.getenv("PHONE_NUMBER_ID")
+                )
+                return
+
+            elif selected_id == "bedbugs":
+                send_text_message(
+                    to=from_number,
+                    body="Bed Bugs service is coming soon! Type 'reset' to go back."
+                )
+                return
+
+            else:
+                send_text_message(
+                    to=from_number,
+                    body="Sorry, that service is not available yet. Type 'reset' to start over."
+                )
+                return
+
+        # ---- B) If we’re in “select_quote_option”, user saw car_fum_quote_options list (if implemented) ----
+        # elif step == "select_quote_option":
+        #     (…additional logic here…)
+        #     return
+
+        else:
+            print(f"[DEBUG] Interactive received, but unknown step='{step}' for {from_number}")
+            send_text_message(
+                to=from_number,
+                body="Sorry, I didn’t understand that. Type 'reset' to start over."
+            )
+            return
+
+    # ─── 3) Fallback for any other payload types ───
+    else:
+        print(f"[DEBUG] handle_car_fumigation_flow: Unsupported msg_type='{msg_type}'")
+        send_text_message(
+            to=from_number,
+            body="Sorry, I can’t handle that type of message. Type 'reset' to start over."
+        )
+        return

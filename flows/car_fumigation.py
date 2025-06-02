@@ -276,7 +276,36 @@ def send_location_selection(to: str, phone_number_id: str):
 
 
 # ------------------------------------------------------------------------------
-# 9) “Quote Summary” → Interactive Button Template
+# 9) “Date/Time Option” → Quick-Reply Buttons
+# ------------------------------------------------------------------------------
+def send_datetime_option_prompt(to: str, phone_number_id: str):
+    """
+    Sends a yes/no-style prompt to let the user choose:
+      - ASAP  (id="appt_asap")
+      - Enter Date/Time (id="appt_datetime")
+    """
+    text = "How would you like to set your appointment?\n\nTap 'ASAP' to book immediately, or 'Enter Date/Time' to specify a date/time."
+    payload = {
+        "to": to,
+        "type": "interactive",
+        "messaging_product": "whatsapp",
+        "interactive": {
+            "type": "button",
+            "body": {"text": text},
+            "action": {
+                "buttons": [
+                    {"type": "reply", "reply": {"id": "appt_asap",      "title": "ASAP"}},
+                    {"type": "reply", "reply": {"id": "appt_datetime", "title": "Enter Date/Time"}}
+                ]
+            }
+        }
+    }
+    resp = send_interactive_message(payload)
+    print(f"[DEBUG] send_datetime_option_prompt → 360dialog response: {resp}")
+
+
+# ------------------------------------------------------------------------------
+# 10) “Quote Summary” → Interactive Button Template
 # ------------------------------------------------------------------------------
 def send_quote_summary(to: str, phone_number_id: str):
     """
@@ -294,7 +323,6 @@ def send_quote_summary(to: str, phone_number_id: str):
     state = get_user_state("carfum", to) or {}
 
     if state.get("manual_quote", False):
-        # Custom-quote placeholder text
         summary_text = (
             "On-Site Car Fumigation Quotation\n\n"
             "Below is the estimated breakdown of your quotation:\n\n"
@@ -371,7 +399,7 @@ def send_quote_summary(to: str, phone_number_id: str):
 
 
 # ------------------------------------------------------------------------------
-# 10) Universal flow-handler: handle_car_fumigation_flow
+# 11) Universal flow-handler: handle_car_fumigation_flow
 # ------------------------------------------------------------------------------
 def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict):
     """
@@ -386,7 +414,6 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
     msg_type = message.get("type")
 
     # ─── 1) Handle quick-reply BUTTONS (either "button" or "interactive.button_reply") ───
-
     def extract_button_payload(msg: dict) -> str:
         """
         360dialog may send quick-reply buttons under:
@@ -440,38 +467,19 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 )
                 return
 
-            # D) "Yes" on final quote summary (Book Now)
-            if payload_lower in ["yes", "book_appointment", "car_fum_confirm_yes"]:
-                clear_user_state(prefix, from_number)
-                send_text_message(
+            # D) "Yes" on final quote summary (Book Now) → now trigger date/time prompt
+            if payload_lower in ["book_appointment", "yes", "car_fum_confirm_yes"] and step == "show_quote_summary":
+                # Move to date/time selection
+                state["step"] = "collect_datetime_option"
+                set_user_state(prefix, from_number, state)
+                send_datetime_option_prompt(
                     to=from_number,
-                    body=(
-                        "Great! We're connecting you to a live agent now. "
-                        "In the meantime, here is our Car Fumigation FAQ:"
-                    )
-                )
-                faq_text = (
-                    "Car Fumigation FAQ:\n\n"
-                    "1. What is car fumigation?\n"
-                    "   - A process that uses non-oily fog to eliminate pests in your vehicle.\n\n"
-                    "2. How long does it take?\n"
-                    "   - Usually 45-60 minutes, depending on the vehicle size.\n\n"
-                    "3. Is it safe for upholstery?\n"
-                    "   - Yes, our chemicals are safe for fabrics and electronics.\n\n"
-                    "4. Do I need to remove personal items?\n"
-                    "   - We recommend removing loose items before fumigation.\n\n"
-                    "5. How soon can I drive after fumigation?\n"
-                    "   - You can drive immediately after the fog disperses (~5-10 min).\n\n"
-                    "If you have further questions, type 'reset' at any time or wait for our agent."
-                )
-                send_text_message(
-                    to=from_number,
-                    body=faq_text
+                    phone_number_id=os.getenv("PHONE_NUMBER_ID")
                 )
                 return
 
-            # E) "No" on final quote summary → back to quote summary
-            if payload_lower in ["no", "return_to_quote", "car_fum_confirm_no"]:
+            # E) "No" on final quote summary (return to quote)
+            if payload_lower in ["no", "return_to_quote", "car_fum_confirm_no"] and step == "show_quote_summary":
                 state["step"] = "select_location"
                 set_user_state(prefix, from_number, state)
                 send_quote_summary(
@@ -480,13 +488,45 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 )
                 return
 
-            # F) "Yes"/"No" on luxury-fee prompt when step == "check_luxury"
+            # F) "ASAP" or "Enter Date/Time" on date/time prompt
+            if step == "collect_datetime_option" and payload_lower in ["appt_asap", "appt_datetime"]:
+                if payload_lower == "appt_asap":
+                    state["preferred_datetime"] = "ASAP"
+                    # Move to collecting final vehicle/location details
+                    state["step"] = "collect_final_details"
+                    set_user_state(prefix, from_number, state)
+                    send_text_message(
+                        to=from_number,
+                        body=(
+                            "Great! You chose ASAP. Please provide the following information in one message:\n\n"
+                            "Vehicle Model: <e.g. Toyota Wish>\n"
+                            "Vehicle Number: <e.g. SSS1111X>\n"
+                            "On-site Location: <e.g. 1 Tampines North Drive 1, Singapore 528559>\n\n"
+                            "Example:\n"
+                            "Vehicle Model: Toyota Wish\n"
+                            "Vehicle Number: SSS1111X\n"
+                            "On-site Location: 1 Tampines North Drive 1, Singapore 528559"
+                        )
+                    )
+                else:
+                    # User chose to specify date/time
+                    state["step"] = "collect_datetime_text"
+                    set_user_state(prefix, from_number, state)
+                    send_text_message(
+                        to=from_number,
+                        body=(
+                            "Please type your preferred date & time for the appointment in this format:\n"
+                            "e.g. \"Coming Thursday at 5pm\""
+                        )
+                    )
+                return
+
+            # G) "Yes"/"No" on luxury-fee prompt when step == "check_luxury"
             if step == "check_luxury" and payload_lower in ["yes", "no", "luxury_yes", "luxury_no"]:
                 if payload_lower in ["yes", "luxury_yes"]:
                     state["continental"] = "luxury_yes"
                 else:
                     state["continental"] = "luxury_no"
-
                 state["step"] = "select_location"
                 set_user_state(prefix, from_number, state)
                 send_location_selection(
@@ -495,7 +535,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 )
                 return
 
-            # G) Unhandled button payload
+            # H) Unhandled button payload
             print(f"[DEBUG] Unhandled BUTTON/BR payload: '{payload_lower}' (step={step})")
             send_text_message(
                 to=from_number,
@@ -505,13 +545,13 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
 
     # ─── 2) Handle interactive LIST replies ───
     if msg_type == "interactive" and message["interactive"].get("type") == "list_reply":
-        selected_id = message["interactive"]["list_reply"]["id"]  # e.g. "car_fumigation" or "cockroach", etc.
+        selected_id = message["interactive"]["list_reply"]["id"]
         print(f"[DEBUG] handle_car_fumigation_flow: LIST payload='{selected_id}' from {from_number}")
 
         state = user_state or {}
         step = state.get("step")
 
-        # A) step == "choose_service": Pest Control Services list
+        # A) step == "choose_service": Pest Control Services
         if step == "choose_service":
             if selected_id == "car_fumigation":
                 state.clear()
@@ -529,7 +569,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 )
                 return
 
-        # B) step == "select_pest_type": Pest Type list
+        # B) step == "select_pest_type": Pest Type
         if step == "select_pest_type":
             if selected_id == "other_pest":
                 state["step"] = "collect_other_pest_text"
@@ -549,7 +589,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 )
                 return
 
-        # C) step == "select_vehicle_type": Vehicle Type list
+        # C) step == "select_vehicle_type": Vehicle Type
         if step == "select_vehicle_type":
             if selected_id == "vehicle_others":
                 state["step"] = "collect_other_vehicle_text"
@@ -558,7 +598,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 set_user_state(prefix, from_number, state)
                 send_text_message(
                     to=from_number,
-                    body="Please type in your vehicle model (e.g. “Toyota Hiace”, “Proton X70”, etc.)."
+                    body="Please type in your vehicle model (e.g. Toyota Hiace, Proton X70, etc.)."
                 )
                 return
             elif selected_id == "vehicle_ultra_luxury":
@@ -572,7 +612,6 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 )
                 return
             else:
-                # One of Sedan/SUV/MPV/Vans → ask luxury-fee question
                 state["vehicle"] = selected_id
                 state["step"] = "check_luxury"
                 state["manual_quote"] = False
@@ -583,7 +622,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 )
                 return
 
-        # D) step == "select_location": Service Zone list
+        # D) step == "select_location": Service Zone
         if step == "select_location":
             state["location"] = selected_id
             state["step"] = "show_quote_summary"
@@ -594,7 +633,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             )
             return
 
-        # Otherwise, unrecognized step
+        # Otherwise
         print(f"[DEBUG] LIST reply received but step='{step}' is unexpected")
         send_text_message(
             to=from_number,
@@ -631,7 +670,59 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             )
             return
 
-        # Otherwise, unrecognized text step
+        # C) collect_datetime_text (user enters custom date/time)
+        if step == "collect_datetime_text":
+            state["preferred_datetime"] = text_body
+            state["step"] = "collect_final_details"
+            set_user_state(prefix, from_number, state)
+            send_text_message(
+                to=from_number,
+                body=(
+                    "Got it. Now please provide the following information in one message:\n\n"
+                    "Vehicle Model: <e.g. Toyota Wish>\n"
+                    "Vehicle Number: <e.g. SSS1111X>\n"
+                    "On-site Location: <e.g. 1 Tampines North Drive 1, Singapore 528559>\n\n"
+                    "Example:\n"
+                    "Vehicle Model: Toyota Wish\n"
+                    "Vehicle Number: SSS1111X\n"
+                    "On-site Location: 1 Tampines North Drive 1, Singapore 528559"
+                )
+            )
+            return
+
+        # D) collect_final_details (user enters vehicle & location info)
+        if step == "collect_final_details":
+            state["final_details"] = text_body
+            # Now connect to a live agent and send FAQ
+            clear_user_state(prefix, from_number)
+            send_text_message(
+                to=from_number,
+                body=(
+                    "Thanks for providing your details. We are now connecting you to a live agent. "
+                    "In the meantime, here is our Car Fumigation FAQ:"
+                )
+            )
+            faq_text = (
+                "Car Fumigation FAQ:\n\n"
+                "1. What is car fumigation?\n"
+                "   - A process that uses non-oily fog to eliminate pests in your vehicle.\n\n"
+                "2. How long does it take?\n"
+                "   - Usually 45-60 minutes, depending on the vehicle size.\n\n"
+                "3. Is it safe for upholstery?\n"
+                "   - Yes, our chemicals are safe for fabrics and electronics.\n\n"
+                "4. Do I need to remove personal items?\n"
+                "   - We recommend removing loose items before fumigation.\n\n"
+                "5. How soon can I drive after fumigation?\n"
+                "   - You can drive immediately after the fog disperses (~5-10 min).\n\n"
+                "If you have further questions, type 'reset' at any time or wait for our agent."
+            )
+            send_text_message(
+                to=from_number,
+                body=faq_text
+            )
+            return
+
+        # E) any other text outside expected steps
         send_text_message(
             to=from_number,
             body="Sorry, I didn’t understand that. Type 'reset' to start over."

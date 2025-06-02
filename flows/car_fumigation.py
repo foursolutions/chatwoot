@@ -20,7 +20,6 @@ def send_main_menu(to: str, phone_number_id: str):
     Sends the top-level main menu template (main_menu_v2).
     This template has one body placeholder {{1}}, so we must supply exactly one non-empty string.
     """
-    # You can replace "there" with the actual user name if you store it.
     greeting_name = "there"
     resp = send_template_message(
         to=to,
@@ -97,7 +96,7 @@ def send_car_fum_quote_options(to: str, phone_number_id: str):
       - "car_fum_book"
       - "car_fum_info"
       - "return_main_menu"
-    (Not used directly in this new flow; stubbed for completeness.)
+    (Not used directly in this flow; stubbed for completeness.)
     """
     resp = send_template_message(
         to=to,
@@ -319,12 +318,12 @@ def send_time_selection_prompt(to: str, phone_number_id: str, chosen_date: str):
     `chosen_date` is either "today", "tomorrow" or a user-typed "DD-MM-YYYY".
     We store it in state so we can attach it later.
     """
-    # 1) Store the chosen_date in state
+    # Store the chosen_date in state
     state = get_user_state("carfum", to) or {}
     state["appointment_date"] = chosen_date
     set_user_state("carfum", to, state)
 
-    # 2) Build a 3-button prompt for time (WhatsApp allows max 3 buttons)
+    # Build a 3-button prompt for time (WhatsApp allows max 3 buttons)
     text = (
         f"You chose *{chosen_date}* for your appointment.\n\n"
         "What time of day works best?\n"
@@ -452,7 +451,7 @@ def send_quote_summary(to: str, phone_number_id: str):
 def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict):
     """
     1) Determine whether this is a quick-reply button (message["type"] == "button" or nested "interactive.button_reply"),
-       an interactive list reply, or plain text (for "collect_..." steps).
+       an interactive list reply, or plain text (for "collect_*" steps).
     2) Extract the payload/text, compare to the current `user_state["step"]`.
     3) Update Redis state accordingly.
     4) Call the next send_*() function to continue the flow.
@@ -515,7 +514,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 )
                 return
 
-            # D) “Yes”/“Book Now” on quote summary → Ask “Which Day?”
+            # D) “Book Now” on quote summary → Ask “Which Day?”
             if step == "show_quote_summary" and payload_lower in ["book_appointment", "yes", "car_fum_confirm_yes"]:
                 state["step"] = "collect_day_option"
                 set_user_state(prefix, from_number, state)
@@ -538,7 +537,6 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             # F) “Which Day?” step = collect_day_option
             if step == "collect_day_option" and payload_lower in ["day_today", "day_tomorrow", "day_pick"]:
                 if payload_lower == "day_today":
-                    # Store “today” in DD-MM-YYYY
                     today_str = datetime.now().strftime("%d-%m-%Y")
                     state["appointment_date"] = today_str
                     state["step"] = "collect_time_option"
@@ -564,7 +562,6 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                     return
 
                 if payload_lower == "day_pick":
-                    # Ask for a typed date in DD-MM-YYYY
                     state["step"] = "collect_custom_date_text"
                     set_user_state(prefix, from_number, state)
                     send_text_message(
@@ -600,14 +597,10 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 send_text_message(
                     to=from_number,
                     body=(
-                        "Great. Now please send us in a single message:\n\n"
-                        "Vehicle Model: <e.g. Toyota Wish>\n"
-                        "Vehicle Number: <e.g. SSS1111X>\n"
-                        "On-site Location: <e.g. 1 Tampines North Drive 1, Singapore 528559>\n\n"
-                        "Example:\n"
-                        "Vehicle Model: Toyota Wish\n"
-                        "Vehicle Number: SSS1111X\n"
-                        "On-site Location: 1 Tampines North Drive 1, Singapore 528559"
+                        "Great! Please provide all three items in one sentence, separated by commas:\n\n"
+                        "Vehicle Model, Vehicle Number, On-site Location  \n"
+                        "For example:\n"
+                        "`Toyota Wish, SSS4444X, Tampines North Drive 1, Singapore 528559`"
                     )
                 )
                 return
@@ -817,48 +810,68 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             send_text_message(
                 to=from_number,
                 body=(
-                    "Thanks. Finally, please send:\n\n"
-                    "Vehicle Model: <e.g. Toyota Wish>\n"
-                    "Vehicle Number: <e.g. SSS1111X>\n"
-                    "On-site Location: <e.g. 1 Tampines North Drive 1, Singapore 528559>\n\n"
-                    "Example:\n"
-                    "Vehicle Model: Toyota Wish\n"
-                    "Vehicle Number: SSS1111X\n"
-                    "On-site Location: 1 Tampines North Drive 1, Singapore 528559"
+                    "Great! Please provide all three items in one sentence, separated by commas:\n\n"
+                    "Vehicle Model, Vehicle Number, On-site Location  \n"
+                    "For example:\n"
+                    "`Toyota Wish, SSS4444X, Tampines North Drive 1, Singapore 528559`"
                 )
             )
             return
 
-        # E) collect_final_details (user enters vehicle & location info)
+        # E) collect_final_details (single comma-separated line)
         if step == "collect_final_details":
-            state["final_details"] = text_body
-            # Now we have:
-            #   state["appointment_date"]   (DD-MM-YYYY)
-            #   state["appointment_time"]   (HH:MM)
-            #   state["final_details"]      (Vehicle Model/Number/Location)
+            parts = [p.strip() for p in text_body.split(",")]
+            if len(parts) != 3:
+                # If they didn’t send exactly three items, re-prompt:
+                send_text_message(
+                    to=from_number,
+                    body=(
+                        "Sorry, I couldn’t parse that.  \n"
+                        "Please send *all three* items in one line, separated by commas:\n\n"
+                        "Vehicle Model, Vehicle Number, On-site Location  \n"
+                        "For example:\n"
+                        "`Toyota Wish, SSS4444X, Tampines North Drive 1, Singapore 528559`"
+                    )
+                )
+                return
+
+            vehicle_model   = parts[0]
+            vehicle_number  = parts[1]
+            parking_address = parts[2]
+
+            state["vehicle_model"]   = vehicle_model
+            state["vehicle_number"]  = vehicle_number
+            state["parking_address"] = parking_address
+
+            # Clear Redis state now that we have all info
             clear_user_state(prefix, from_number)
 
+            # Thank them and connect to agent + FAQ:
             send_text_message(
                 to=from_number,
                 body=(
                     f"Thank you. Your appointment is set for "
-                    f"{state['appointment_date']} at {state['appointment_time']}.\n"
-                    f"We are now connecting you to a live agent. In the meantime, here's our Car Fumigation FAQ:"
+                    f"{state['appointment_date']} at {state['appointment_time']}.\n\n"
+                    f"• Vehicle Model: {vehicle_model}  \n"
+                    f"• Vehicle Number: {vehicle_number}  \n"
+                    f"• Parking Address: {parking_address}\n\n"
+                    "Connecting you to a live agent now. In the meantime, here’s our Car Fumigation FAQ:"
                 )
             )
+
             faq_text = (
                 "Car Fumigation FAQ:\n\n"
                 "1. What is car fumigation?\n"
                 "   - A process that uses non-oily fog to eliminate pests in your vehicle.\n\n"
                 "2. How long does it take?\n"
-                "   - Usually 45-60 minutes, depending on the vehicle size.\n\n"
+                "   - Usually 45–60 minutes, depending on vehicle size.\n\n"
                 "3. Is it safe for upholstery?\n"
                 "   - Yes, our chemicals are safe for fabrics and electronics.\n\n"
                 "4. Do I need to remove personal items?\n"
                 "   - We recommend removing loose items before fumigation.\n\n"
                 "5. How soon can I drive after fumigation?\n"
                 "   - You can drive immediately after the fog disperses (~5–10 min).\n\n"
-                "If you have further questions, type 'reset' at any time or wait for our agent."
+                "If you have further questions, type 'reset' anytime or wait for our agent."
             )
             send_text_message(to=from_number, body=faq_text)
             return

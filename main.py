@@ -1,7 +1,5 @@
-import flows.bedbug as bedbug
-import flows.mold as mold
-import flows.car_fumigation as car_fumigation
-import dispatcher  # <-- Import your dispatcher!
+# main.py
+
 import os
 import requests
 import datetime
@@ -11,34 +9,39 @@ import re
 from flask import Flask, request
 from dotenv import load_dotenv
 
-# 1) Load environment variables
-load_dotenv()
+import dispatcher  # your dispatcher.py
+from flows.car_fumigation import send_pest_control_dropdown, send_car_fum_menu
 
-# 2) Read environment variables
-ACCESS_TOKEN = os.getenv("WHATSAPP_TOKEN")  # Your 360dialog API Key or Meta permanent token
+# -------------------------------
+# Load environment variables
+# -------------------------------
+load_dotenv()
+ACCESS_TOKEN    = os.getenv("WHATSAPP_TOKEN")    # 360dialog API Key
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
-VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
+VERIFY_TOKEN    = os.getenv("VERIFY_TOKEN")
 
 app = Flask(__name__)
 
-# Global session data dictionaries (legacy - now unused, but retained for admin/live agent logic if needed)
-# live_sessions = {}
-# car_fumigation_data = {}
-# mold_removal_data = {}
-# bedbug_data = {}
+# Used to dedupe incoming WhatsApp messages
 last_message_id = {}
 
-# Define admin phone numbers (update with your own admin numbers)
-ADMIN_NUMBERS = {"+6587788080"}
-# Dynamic mapping: admin number -> target client number.
-ADMIN_TARGET = {}
+# -------------------------------
+# Helper: Normalize incoming number
+# -------------------------------
+def normalize_number(number):
+    number = re.sub(r"\s+", "", number)
+    if not number.startswith("+"):
+        number = "+" + number
+    return number
 
 # -------------------------------
-# WhatsApp Message Helpers
+# WhatsApp Text / Template Senders
 # -------------------------------
-
 def send_text_message(to, message):
-    url = f"https://waba.360dialog.io/v1/messages"
+    """
+    Send a plain text message via 360dialog.
+    """
+    url = "https://waba.360dialog.io/v1/messages"
     headers = {
         "D360-API-KEY": ACCESS_TOKEN,
         "Content-Type": "application/json"
@@ -48,10 +51,13 @@ def send_text_message(to, message):
         "type": "text",
         "text": {"body": message}
     }
-    response = requests.post(url, json=payload, headers=headers)
-    print(f"✅ Sent WhatsApp text to {to}: {response.text}")
+    r = requests.post(url, json=payload, headers=headers)
+    print(f"✅ Sent WhatsApp text to {to}: {r.text}")
 
 def send_template_message(to, template_name, namespace, variables):
+    """
+    Send a template message via 360dialog v2 API.
+    """
     url = "https://waba-v2.360dialog.io/messages"
     headers = {
         "D360-API-KEY": ACCESS_TOKEN,
@@ -63,63 +69,59 @@ def send_template_message(to, template_name, namespace, variables):
         "type": "template",
         "template": {
             "namespace": namespace,
-            "language": {
-                "policy": "deterministic",
-                "code": "en"
-            },
+            "language": {"policy": "deterministic", "code": "en"},
             "name": template_name,
             "components": [
                 {
                     "type": "body",
-                    "parameters": [{"type": "text", "text": var} for var in variables]
+                    "parameters": [{"type": "text", "text": str(var)} for var in variables]
                 }
             ]
         }
     }
-    response = requests.post(url, json=payload, headers=headers)
-    if response.status_code != 200:
+    r = requests.post(url, json=payload, headers=headers)
+    if r.status_code != 200:
         print("⚠️ Error sending template message:")
         print("Request payload:", payload)
-        print("Response text:", response.text)
+        print("Response text:", r.text)
     else:
-        print(f"✅ Sent template message to {to}: {response.text}")
+        print(f"✅ Sent template '{template_name}' → {to}: {r.text}")
 
 def send_interactive_message(to, payload):
-    url = f"https://waba.360dialog.io/v1/messages"
+    """
+    Send a raw interactive (list/button) payload via 360dialog.
+    """
+    url = "https://waba.360dialog.io/v1/messages"
     headers = {
         "D360-API-KEY": ACCESS_TOKEN,
         "Content-Type": "application/json"
     }
-    payload["to"] = to  # ensure recipient is correct
-    response = requests.post(url, json=payload, headers=headers)
-    print(f"✅ Sent interactive message to {to}: {response.text}")
-
-def normalize_number(number):
-    number = re.sub(r"\s+", "", number)
-    if not number.startswith("+"):
-        number = "+" + number
-    return number
-
-def send_test_template(to):
-    namespace = "94d66366_9ec1_43a3_a84c_46039bd33ef5"
-    template_name = "test_greeting"
-    send_template_message(to, template_name, namespace, ["Nate"])
+    payload["to"] = to
+    payload["messaging_product"] = "whatsapp"
+    r = requests.post(url, json=payload, headers=headers)
+    print(f"✅ Sent interactive message to {to}: {r.text}")
 
 # -------------------------------
-# Live Agent & Menu Functions
+# Main Menu and Live-Agent
 # -------------------------------
+def send_main_menu(to, customer_name):
+    """
+    Sends your approved 'main_menu_v2' template.
+    Assumes you have set up a template named 'main_menu_v2'
+    under namespace '94d66366_9ec1_43a3_a84c_46039bd33ef5'.
+    The template's body should use one placeholder for the customer's name.
+    """
+    namespace     = "94d66366_9ec1_43a3_a84c_46039bd33ef5"
+    template_name = "main_menu_v2"
+    send_template_message(to, template_name, namespace, [customer_name])
 
 def initiate_live_agent(to, sender_name):
-    # Placeholder for live agent logic if you want to extend later
+    """
+    Escalate to a live agent.
+    """
     text_msg = (
         "Hold on tight—we’re summoning a real, living, breathing, functioning human support agent for you! "
-        "They’ll join this chat as soon as they're available. In the meantime, feel free to explore our other services and read our FAQ!"
-    )
-    send_text_message(to, text_msg)
-
-def end_live_agent_session(to):
-    text_msg = (
-        "You have ended the live agent session. Feel free to continue chatting with me for assistance anytime!"
+        "They’ll join this chat as soon as they're available. In the meantime, feel free to explore our services or read our FAQ!"
     )
     send_text_message(to, text_msg)
 
@@ -127,67 +129,18 @@ def reset_conversation(to, customer_name):
     send_text_message(to, "Conversation reset. Let's start fresh!")
     send_main_menu(to, customer_name)
 
-def send_main_menu(to, customer_name):
-    namespace = "94d66366_9ec1_43a3_a84c_46039bd33ef5"
-    template_name = "main_menu_v2"  # use your new approved version
-    send_template_message(to, template_name, namespace, [customer_name])
-
 # -------------------------------
-# Admin Command Handling
+# Admin placeholders
 # -------------------------------
-
-def send_admin_command_menu(admin_number):
-    payload = {
-        "messaging_product": "whatsapp",
-        "recipient_type": "individual",
-        "type": "interactive",
-        "interactive": {
-            "type": "list",
-            "header": {"type": "text", "text": "Admin Commands"},
-            "body": {"text": "Select a command:"},
-            "footer": {"text": "Admin Options"},
-            "action": {
-                "button": "Select Command",
-                "sections": [
-                    {
-                        "title": "Master Cmds",
-                        "rows": [
-                            {
-                                "id": "admin_cfum_confirm",
-                                "title": "Car Fum Confirm",
-                                "description": "Send car fum prep text",
-                            },
-                            {
-                                "id": "admin_mold_confirm",
-                                "title": "Mold Rem Confirm",
-                                "description": "Send mold prep text",
-                            },
-                            {
-                                "id": "admin_bedbug_confirm",
-                                "title": "Bed Bug Confirm",
-                                "description": "Send bed bug prep text",
-                            },
-                            {
-                                "id": "admin_payment_methods",
-                                "title": "Payment Methods",
-                                "description": "Send payment FAQ",
-                            },
-                            {
-                                "id": "admin_reset",
-                                "title": "Reset Conversation",
-                                "description": "Reset client convo",
-                            },
-                        ],
-                    }
-                ],
-            },
-        },
-    }
-    send_interactive_message(admin_number, payload)
+ADMIN_NUMBERS = {"+6587788080"}
+ADMIN_TARGET  = {}
 
 def handle_admin_text(sender_number, text_body):
-    lower_text = text_body.lower()
-    if lower_text.startswith("set target"):
+    """
+    Admin text commands.
+    """
+    lower = text_body.lower()
+    if lower.startswith("set target"):
         parts = text_body.split()
         if len(parts) == 3:
             target = normalize_number(parts[2])
@@ -197,192 +150,123 @@ def handle_admin_text(sender_number, text_body):
         else:
             send_text_message(sender_number, "Usage: set target +65XXXXXXXX")
             return True
-    elif lower_text == "appointment confirmed":
+
+    if lower == "appointment confirmed":
         target = ADMIN_TARGET.get(sender_number, sender_number)
-        car_fumigation.send_car_fumigation_preparation(
-            target, PHONE_NUMBER_ID, ACCESS_TOKEN
-        )
-        send_text_message(
-            sender_number, f"Appointment confirmed command sent to {target}"
-        )
+        from flows.car_fumigation import send_car_fumigation_preparation
+        send_car_fumigation_preparation(target, PHONE_NUMBER_ID, ACCESS_TOKEN)
+        send_text_message(sender_number, f"Appointment confirmed command sent to {target}")
         return True
-    elif lower_text == "commands":
-        send_admin_command_menu(sender_number)
+
+    if lower == "commands":
+        send_text_message(sender_number, "Admin commands: set target +65..., appointment confirmed, commands")
         return True
+
     return False
 
 # -------------------------------
 # Flask Webhook Endpoint
 # -------------------------------
-
-@app.route('/webhook', methods=['GET', 'POST'])
+@app.route("/webhook", methods=["GET", "POST"])
 def webhook():
-    if request.method == 'GET':
+    # --- VERIFY (GET) ---
+    if request.method == "GET":
         verify_token = request.args.get("hub.verify_token")
-        challenge = request.args.get("hub.challenge")
-        print("DEBUG - Received verify_token from 360dialog:", verify_token)
-        if verify_token == os.environ.get("VERIFY_TOKEN"):
+        challenge    = request.args.get("hub.challenge")
+        print("DEBUG – Received verify_token:", verify_token)
+        if verify_token == VERIFY_TOKEN:
             return challenge, 200
-        else:
-            return "Verification token mismatch", 403
-        
-    if request.method == "POST":
-        if not request.is_json:
-            print("❌ Unsupported content type:", request.content_type)
-            return "Unsupported Media Type", 415
+        return "Verification token mismatch", 403
 
-        data = request.get_json()
+    # --- INBOUND MESSAGE (POST) ---
+    if not request.is_json:
+        print("❌ Unsupported content type:", request.content_type)
+        return "Unsupported Media Type", 415
 
-        try:
-            msg = data["entry"][0]["changes"][0]["value"].get("messages", [None])[0]
-            if msg is None:
-                return "OK", 200
+    data = request.get_json()
+    try:
+        msg = data["entry"][0]["changes"][0]["value"].get("messages", [None])[0]
+        if msg is None:
+            return "OK", 200
 
-            message_id = msg.get("id")
-            sender_number = normalize_number(msg.get("from"))
-            sender_name = data["entry"][0]["changes"][0]["value"]["contacts"][0]["profile"]["name"]
+        message_id    = msg.get("id")
+        sender_number = normalize_number(msg.get("from"))
+        sender_name   = data["entry"][0]["changes"][0]["value"]["contacts"][0]["profile"]["name"]
 
+        # Prevent duplicate processing
+        if sender_number in last_message_id and last_message_id[sender_number] == message_id:
+            return "OK", 200
+        last_message_id[sender_number] = message_id
+
+        message_type = msg.get("type")
+        text_body    = ""
+        button_reply = None
+        list_reply   = None
+
+        if message_type == "text":
+            text_body = msg["text"]["body"].strip()
+
+            # --- ADMIN TEXT? ---
             if sender_number in ADMIN_NUMBERS:
-                print(f"Admin message from {sender_number}: {msg}")
-
-            # Prevent processing the same message multiple times
-            if (
-                sender_number in last_message_id
-                and last_message_id[sender_number] == message_id
-            ):
-                return "OK", 200
-            last_message_id[sender_number] = message_id
-
-            message_type = msg.get("type")
-            text_body = msg["text"]["body"].strip(
-            ) if message_type == "text" else ""
-
-            # -------------------------------
-            # Admin text command branch
-            # -------------------------------
-            if message_type == "text" and sender_number in ADMIN_NUMBERS:
                 if handle_admin_text(sender_number, text_body):
                     return "OK", 200
 
-            # -------------------------------
-            # Admin button/list interactive commands
-            # -------------------------------
-            if message_type == "interactive":
-                interactive_data = msg["interactive"]
-                # Admin button replies
-                if "button_reply" in interactive_data:
-                    button_id = interactive_data["button_reply"]["id"]
-                    if sender_number in ADMIN_NUMBERS and button_id.startswith("admin_"):
-                        target = ADMIN_TARGET.get(sender_number, sender_number)
-                        if button_id == "admin_cfum_confirm":
-                            car_fumigation.send_car_fumigation_preparation(
-                                target, PHONE_NUMBER_ID, ACCESS_TOKEN
-                            )
-                        elif button_id == "admin_mold_confirm":
-                            mold.send_mold_preparation(
-                                target, PHONE_NUMBER_ID, ACCESS_TOKEN
-                            )
-                        elif button_id == "admin_bedbug_confirm":
-                            bedbug.process_bedbug_faq_response(
-                                target,
-                                "bbfaq_preparation",
-                                PHONE_NUMBER_ID,
-                                ACCESS_TOKEN,
-                                send_text_message,
-                            )
-                        elif button_id == "admin_payment_methods":
-                            send_text_message(
-                                target,
-                                "We accept the following payment methods:\n"
-                                "* PayNow: Payment via UEN: 201812722M\n"
-                                "* Atome: Interest-free installment payments (3 months). A 5% surcharge applies.\n"
-                                "* Cash: If other options aren't feasible, inform us in advance and kindly prepare the exact amount.",
-                            )
-                        elif button_id == "admin_reset":
-                            reset_conversation(target, "Client")
-
-                        send_text_message(
-                            sender_number, "Admin command executed.")
-                        return "OK", 200
-
-                # Admin list replies
-                if "list_reply" in interactive_data:
-                    list_id = interactive_data["list_reply"]["id"]
-                    if sender_number in ADMIN_NUMBERS and list_id.startswith("admin_"):
-                        target = ADMIN_TARGET.get(sender_number, sender_number)
-                        if list_id == "admin_cfum_confirm":
-                            car_fumigation.send_car_fumigation_preparation(
-                                target, PHONE_NUMBER_ID, ACCESS_TOKEN
-                            )
-                        elif list_id == "admin_mold_confirm":
-                            mold.send_mold_preparation(
-                                target, PHONE_NUMBER_ID, ACCESS_TOKEN
-                            )
-                        elif list_id == "admin_bedbug_confirm":
-                            bedbug.process_bedbug_faq_response(
-                                target,
-                                "bbfaq_preparation",
-                                PHONE_NUMBER_ID,
-                                ACCESS_TOKEN,
-                                send_text_message,
-                            )
-                        elif list_id == "admin_payment_methods":
-                            send_text_message(
-                                target,
-                                "We accept the following payment methods:\n"
-                                "* PayNow: Payment via UEN: 201812722M\n"
-                                "* Atome: Interest-free installment payments (3 months). A 5% surcharge applies.\n"
-                                "* Cash: If other options aren't feasible, inform us in advance and kindly prepare the exact amount.",
-                            )
-                        elif list_id == "admin_reset":
-                            reset_conversation(target, "Client")
-
-                        send_text_message(
-                            sender_number, "Admin command executed.")
-                        return "OK", 200
-
-            # =============================
-            # USER FLOW: REDIS DISPATCHER
-            # =============================
-            # All normal user text and button/list interactions routed via dispatcher
-
-            if message_type == "text":
-                dispatcher.handle_message(
-                    sender_number,
-                    text_body,
-                    button_reply=None,
-                    list_reply=None,
-                    access_token=ACCESS_TOKEN
-                )
-                return "OK", 200
-
-            elif message_type == "interactive":
-                interactive_data = msg["interactive"]
-                button_reply = None
-                list_reply = None
-                if "button_reply" in interactive_data:
-                     # Change here to use 'text'
-                    button_reply = interactive_data["button_reply"]["text"]
-                if "list_reply" in interactive_data:
-                    list_reply = interactive_data["list_reply"]["title"]
-                dispatcher.handle_message(
-                    sender_number,
-                    message_text="",
-                    button_reply=button_reply,
-                    list_reply=list_reply,
-                    access_token=ACCESS_TOKEN
-                )
-                return "OK", 200
-
-
-        except KeyError as e:
-            print("ℹ️ No message found, skipping...", e)
-            return "OK", 200
-        except Exception as ex:
-            print("❌ Error in webhook processing:", ex)
+            # --- ANY FREE-TEXT → SHOW MAIN MENU ---
+            send_main_menu(sender_number, sender_name)
             return "OK", 200
 
+        elif message_type == "interactive":
+            interactive_data = msg["interactive"]
+
+            # Extract button‐reply text or list‐reply title
+            if "button_reply" in interactive_data:
+                button_reply = interactive_data["button_reply"]["text"]
+            if "list_reply" in interactive_data:
+                list_reply = interactive_data["list_reply"]["title"]
+
+            # --- ADMIN INTERACTIVE? ---
+            if sender_number in ADMIN_NUMBERS and button_reply and button_reply.startswith("admin_"):
+                send_text_message(sender_number, "Admin command executed.")
+                return "OK", 200
+
+            # --- TOP‐LEVEL MENU INTERACTIVE ---
+            if button_reply == "Need help on Pest!":
+                # Show the full Pest Control dropdown (Car Fumigation, Bed Bugs, etc.)
+                send_pest_control_dropdown(sender_number, PHONE_NUMBER_ID, ACCESS_TOKEN)
+
+                # Seed Redis state for selecting a specific service
+                import json
+                from dispatcher import FLOW, r as REDIS_CONN
+                REDIS_CONN.delete(f"{FLOW}:{sender_number}")
+                REDIS_CONN.set(f"{FLOW}:{sender_number}", json.dumps({"step": "select_service"}), ex=3600)
+                return "OK", 200
+
+            if button_reply == "Live Human":
+                initiate_live_agent(sender_number, sender_name)
+                return "OK", 200
+
+            if button_reply == "Need help on Mold!":
+                send_text_message(sender_number, "Sorry, Mold removal flow is coming soon—please check back later.")
+                return "OK", 200
+
+            # --- OTHERWISE → Pass to dispatcher (pest-control scope) ---
+            dispatcher.handle_message(
+                sender_number,
+                message_text="",
+                button_reply=button_reply,
+                list_reply=list_reply,
+                access_token=ACCESS_TOKEN
+            )
+            return "OK", 200
+
+    except KeyError as e:
+        print("ℹ️ No message found, skipping...", e)
         return "OK", 200
+    except Exception as ex:
+        print("❌ Error in webhook processing:", ex)
+        return "OK", 200
+
+    return "OK", 200
 
 @app.route("/", methods=["GET"])
 def index():
@@ -390,3 +274,4 @@ def index():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
+

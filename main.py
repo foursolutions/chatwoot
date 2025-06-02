@@ -1,5 +1,3 @@
-# main.py
-
 import os
 import requests
 import datetime
@@ -9,8 +7,8 @@ import re
 from flask import Flask, request
 from dotenv import load_dotenv
 
-import dispatcher  # your dispatcher.py
-from flows.car_fumigation import send_pest_control_dropdown, send_car_fum_menu
+import dispatcher  # dispatcher.py now imports from root modules, not from flows/
+from car_fumigation import send_pest_control_dropdown, send_car_fum_menu
 
 # -------------------------------
 # Load environment variables
@@ -26,7 +24,7 @@ app = Flask(__name__)
 last_message_id = {}
 
 # -------------------------------
-# Helper: Normalize incoming number
+# Helper: Normalize incoming phone number
 # -------------------------------
 def normalize_number(number):
     number = re.sub(r"\s+", "", number)
@@ -153,7 +151,7 @@ def handle_admin_text(sender_number, text_body):
 
     if lower == "appointment confirmed":
         target = ADMIN_TARGET.get(sender_number, sender_number)
-        from flows.car_fumigation import send_car_fumigation_preparation
+        from car_fumigation import send_car_fumigation_preparation
         send_car_fumigation_preparation(target, PHONE_NUMBER_ID, ACCESS_TOKEN)
         send_text_message(sender_number, f"Appointment confirmed command sent to {target}")
         return True

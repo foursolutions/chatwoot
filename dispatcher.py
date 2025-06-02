@@ -4,7 +4,7 @@ import os
 import json
 import redis
 
-from flows.car_fumigation import (
+from car_fumigation import (
     send_car_fum_menu,
     send_pest_list,
     send_vehicle_model_list,
@@ -15,12 +15,11 @@ from flows.car_fumigation import (
     send_appointment_method,
     send_appointment_confirmation
 )
-from flows.bedbug import send_bedbug_initial_menu
+from bedbug import send_bedbug_initial_menu
 
 # -------------------------------
 # REDIS SETUP
 # -------------------------------
-# Make sure REDIS_URL is set in your .env or environment
 REDIS_URL = os.getenv(
     "REDIS_URL",
     "redis://:wD!a4yZ4NFCCtBr@redis-14395.c321.us-east-1-2.ec2.redns.redis-cloud.com:14395"
@@ -48,14 +47,14 @@ def clear_user_state(prefix, user_id):
 # -------------------------------
 def handle_message(sender_number, message_text, button_reply=None, list_reply=None, access_token=None):
     """
-    Redis-backed state machine for Pest Control flows (starting with Car Fumigation as an example).
-    
+    Redis-backed state machine for Pest Control flows (Car Fumigation + Bed Bugs as examples).
+
     Parameters:
-      - sender_number: the user's phone number (as string, e.g. "+6581234567")
-      - message_text: raw free-text (unused except for "menu" commands)
-      - button_reply: string of the button's "title" when a button was tapped
-      - list_reply: string of the list row's "title" when a list item was tapped
-      - access_token: your 360dialog API key, passed through from main.py
+      - sender_number: the user's phone number (e.g. "+6581234567")
+      - message_text: raw free-text (used for "menu" commands)
+      - button_reply: title text of the button tapped
+      - list_reply: title text of the list row tapped
+      - access_token: your 360dialog API key
     """
     user_id = sender_number
     state   = get_user_state(FLOW, user_id)
@@ -64,12 +63,12 @@ def handle_message(sender_number, message_text, button_reply=None, list_reply=No
     # If user explicitly typed "menu" or "main menu", restart the pest-control dropdown
     if message_text and message_text.lower() in ("menu", "main menu", "restart"):
         clear_user_state(FLOW, user_id)
-        from flows.car_fumigation import send_pest_control_dropdown
+        from car_fumigation import send_pest_control_dropdown
         send_pest_control_dropdown(user_id, access_token)
         set_user_state(FLOW, user_id, {"step": "select_service"})
         return
 
-    # Step 0: User has just tapped "Need help on Pest!" → expecting one of the pest-control categories
+    # Step 0: User tapped "Need help on Pest!" → expecting one of the pest-control categories
     if step == "select_service" and list_reply:
         # Car Fumigation chosen?
         if list_reply.startswith("Car Fumigation"):
@@ -88,14 +87,14 @@ def handle_message(sender_number, message_text, button_reply=None, list_reply=No
         # (Add other pest categories here, e.g. Booklice, Roaches & Ants, etc.)
         # Example:
         # if list_reply.startswith("Booklice"):
-        #     from flows.booklice import send_booklice_initial_menu
+        #     from booklice import send_booklice_initial_menu
         #     state["step"] = "booklice_start"
         #     set_user_state(FLOW, user_id, state)
         #     send_booklice_initial_menu(user_id, access_token)
         #     return
 
         # Fallback: re-show the pest-control dropdown
-        from flows.car_fumigation import send_pest_control_dropdown
+        from car_fumigation import send_pest_control_dropdown
         send_pest_control_dropdown(user_id, access_token)
         return
 
@@ -111,7 +110,7 @@ def handle_message(sender_number, message_text, button_reply=None, list_reply=No
             return
         elif button_reply == "Return to Main Menu":
             clear_user_state(FLOW, user_id)
-            from flows.car_fumigation import send_pest_control_dropdown
+            from car_fumigation import send_pest_control_dropdown
             send_pest_control_dropdown(user_id, access_token)
             set_user_state(FLOW, user_id, {"step": "select_service"})
             return
@@ -140,13 +139,13 @@ def handle_message(sender_number, message_text, button_reply=None, list_reply=No
         send_luxury_prompt(user_id, access_token)
         return
 
-    # Step 5: Luxury car prompt → button reply ("Yes"/"No")
+    # Step 5: Luxury car prompt → button reply (“Yes”/“No”)
     if step == "awaiting_luxury" and button_reply in ("Yes", "No"):
         state["luxury"] = button_reply
         # Example pricing logic
-        state["model_price"] = "$150"
-        state["extra_fee"]   = "$20" if button_reply == "Yes" else "$0"
-        state["service_fee"] = "$30"
+        state["model_price"]   = "$150"
+        state["extra_fee"]     = "$20" if button_reply == "Yes" else "$0"
+        state["service_fee"]   = "$30"
         total = (
             int(state["model_price"].strip("$"))
             + int(state["extra_fee"].strip("$"))
@@ -166,7 +165,7 @@ def handle_message(sender_number, message_text, button_reply=None, list_reply=No
         )
         return
 
-    # Step 6: Showing Quote Summary → button reply ("Book Now", "More Info on Service", "Return to Main Menu")
+    # Step 6: Showing Quote Summary → button reply (“Book Now”, “More Info on Service”, “Return to Main Menu”)
     if step == "showing_summary" and button_reply:
         if button_reply == "Book Now":
             state["step"] = "appointment_method"
@@ -178,12 +177,12 @@ def handle_message(sender_number, message_text, button_reply=None, list_reply=No
             return
         elif button_reply == "Return to Main Menu":
             clear_user_state(FLOW, user_id)
-            from flows.car_fumigation import send_pest_control_dropdown
+            from car_fumigation import send_pest_control_dropdown
             send_pest_control_dropdown(user_id, access_token)
             set_user_state(FLOW, user_id, {"step": "select_service"})
             return
 
-    # Step 7: Appointment method ("ASAP" or "Enter Date/Time")
+    # Step 7: Appointment method (“ASAP” or “Enter Date/Time”)
     if step == "appointment_method" and button_reply:
         if button_reply == "ASAP":
             state["date_time"] = "ASAP"
@@ -203,7 +202,7 @@ def handle_message(sender_number, message_text, button_reply=None, list_reply=No
         )
         return
 
-    # Step 8: Appointment confirmation ("Yes" / "No")
+    # Step 8: Appointment confirmation (“Yes” / “No”)
     if step == "appointment_confirmation" and button_reply in ("Yes", "No"):
         if button_reply == "Yes":
             clear_user_state(FLOW, user_id)
@@ -215,6 +214,7 @@ def handle_message(sender_number, message_text, button_reply=None, list_reply=No
             send_quote_options(user_id, access_token)
         return
 
-    # --- FALLBACK: unknown state → show Car Fumigation main menu again ---
-    send_car_fum_menu(user_id, access_token)
-    set_user_state(FLOW, user_id, {"step": "main_menu"})
+    # --- FALLBACK: unknown state → show Pest Control dropdown again ---
+    from car_fumigation import send_pest_control_dropdown
+    send_pest_control_dropdown(user_id, access_token)
+    set_user_state(FLOW, user_id, {"step": "select_service"})

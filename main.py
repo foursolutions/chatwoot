@@ -9,8 +9,8 @@ import re
 from flask import Flask, request
 from dotenv import load_dotenv
 
-import dispatcher  # dispatcher.py will import from flows/car_fumigation.py, flows/bedbug.py, etc.
-from flows.car_fumigation import send_pest_control_dropdown, send_car_fumigation_options
+import dispatcher
+import flows.car_fumigation as car_fumigation
 
 # -------------------------------
 # Load environment variables
@@ -173,7 +173,6 @@ def webhook():
     if request.method == "GET":
         verify_token = request.args.get("hub.verify_token")
         challenge    = request.args.get("hub.challenge")
-        print("DEBUG – Received verify_token:", verify_token)
         if verify_token == VERIFY_TOKEN:
             return challenge, 200
         return "Verification token mismatch", 403
@@ -232,7 +231,7 @@ def webhook():
             # --- TOP‐LEVEL MENU INTERACTIVE ---
             if button_reply == "Need help on Pest!":
                 # Show the full Pest Control dropdown (Car Fumigation, Bed Bugs, etc.)
-                send_pest_control_dropdown(sender_number, PHONE_NUMBER_ID, ACCESS_TOKEN)
+                car_fumigation.send_pest_control_dropdown(sender_number, PHONE_NUMBER_ID, ACCESS_TOKEN)
 
                 # Seed Redis state for selecting a specific service
                 import json
@@ -255,7 +254,10 @@ def webhook():
                 message_text="",
                 button_reply=button_reply,
                 list_reply=list_reply,
-                access_token=ACCESS_TOKEN
+                access_token=ACCESS_TOKEN,
+                phone_number_id=PHONE_NUMBER_ID,
+                send_text_message=send_text_message,
+                send_interactive_message=send_interactive_message
             )
             return "OK", 200
 

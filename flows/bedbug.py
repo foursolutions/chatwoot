@@ -12,10 +12,9 @@ from helpers import (
 
 # ─── Constants & Static Data ─────────────────────────────────────────────────
 
-# Redis key prefix for Bedbug flow
-BEDBUG_PREFIX = "bedbug"
+BEDBUG_PREFIX = "bedbug"   # Redis key prefix for Bedbug flow
 
-# List of areas a user can select when reporting bedbugs
+# Interactive list of areas a user can select when reporting bedbugs
 BEDBUG_AREAS = [
     {"id": "bedbug_area_bed",        "title": "Bedroom(s)",       "description": "Bedbugs in bedroom(s)"},
     {"id": "bedbug_area_living",     "title": "Living Area",      "description": "Bedbugs in living area"},
@@ -26,7 +25,6 @@ BEDBUG_AREAS = [
 
 
 # ─── 1) Initial Bedbug‐Option Prompt ──────────────────────────────────────────
-
 def send_bedbug_option_prompt(to: str, phone_number_id: str):
     """
     Sends the initial Bedbug menu with three buttons:
@@ -54,13 +52,12 @@ def send_bedbug_option_prompt(to: str, phone_number_id: str):
     }
     send_interactive_message(payload)
 
-    # Set current step
+    # Set current step in Redis
     state = {"step": "bedbug_option", "affected_areas": []}
     set_user_state(BEDBUG_PREFIX, to, state)
 
 
 # ─── 2) Affected‐Area Selection (Interactive List) ────────────────────────────
-
 def send_bedbug_area_selection(to: str, phone_number_id: str):
     """
     Sends an interactive list of BEDBUG_AREAS (excluding ones already chosen).
@@ -68,7 +65,7 @@ def send_bedbug_area_selection(to: str, phone_number_id: str):
     state = get_user_state(BEDBUG_PREFIX, to) or {}
     selected = state.get("affected_areas", [])
 
-    # Filter out areas already selected
+    # Filter out areas that are already in “affected_areas”
     available = [area for area in BEDBUG_AREAS if area["title"] not in selected]
     if not available:
         # If no more options, skip directly to count prompts
@@ -91,10 +88,7 @@ def send_bedbug_area_selection(to: str, phone_number_id: str):
             "footer": {"text": "Select Area"},
             "action": {
                 "button": "Select Area",
-                "sections": [{
-                    "title": "Affected Areas",
-                    "rows": rows
-                }]
+                "sections": [{"title": "Affected Areas", "rows": rows}]
             }
         }
     }
@@ -105,7 +99,6 @@ def send_bedbug_area_selection(to: str, phone_number_id: str):
 
 
 # ─── 3) Bedroom Count Prompt ──────────────────────────────────────────────────
-
 def send_bedbug_bedroom_count_prompt(to: str, phone_number_id: str):
     """
     Prompts user to specify how many bedrooms are affected.
@@ -125,9 +118,9 @@ def send_bedbug_bedroom_count_prompt(to: str, phone_number_id: str):
                 "sections": [{
                     "title": "Bedroom Count Options",
                     "rows": [
-                        {"id": "bedbug_bed_count_1", "title": "1 Bedroom",       "description": "1 Bedroom affected"},
-                        {"id": "bedbug_bed_count_2", "title": "2 Bedrooms",      "description": "2 Bedrooms affected"},
-                        {"id": "bedbug_bed_count_3", "title": "3+ Bedrooms",     "description": "3 or more Bedrooms affected"}
+                        {"id": "bedbug_bed_count_1", "title": "1 Bedroom",   "description": "1 Bedroom affected"},
+                        {"id": "bedbug_bed_count_2", "title": "2 Bedrooms",  "description": "2 Bedrooms affected"},
+                        {"id": "bedbug_bed_count_3", "title": "3+ Bedrooms", "description": "3 or more Bedrooms affected"}
                     ]
                 }]
             }
@@ -141,7 +134,6 @@ def send_bedbug_bedroom_count_prompt(to: str, phone_number_id: str):
 
 
 # ─── 4) Overall Bedbug Count Prompt ──────────────────────────────────────────
-
 def send_bedbug_count_prompt(to: str, phone_number_id: str):
     """
     Prompts user to estimate how many bedbugs were seen.
@@ -179,7 +171,6 @@ def send_bedbug_count_prompt(to: str, phone_number_id: str):
 
 
 # ─── 5) “Add Another Area?” Confirmation ──────────────────────────────────────
-
 def send_bedbug_area_add_confirmation(to: str, phone_number_id: str):
     """
     After any area (except bedroom count), ask if user wants to add another area.
@@ -208,16 +199,15 @@ def send_bedbug_area_add_confirmation(to: str, phone_number_id: str):
 
 
 # ─── 6) Summary & Confirmation ───────────────────────────────────────────────
-
 def send_bedbug_summary(to: str, phone_number_id: str):
     """
     Summarizes all collected bedbug details and asks for final confirmation.
     """
     state = get_user_state(BEDBUG_PREFIX, to) or {}
-    data = state
+    data  = state
 
     # Build summary text
-    areas = data.get("affected_areas", [])
+    areas         = data.get("affected_areas", [])
     bedroom_count = data.get("bedbug_bedroom_count", "Not provided")
     overall_count = data.get("bedbug_count", "Not provided")
 
@@ -256,7 +246,6 @@ def send_bedbug_summary(to: str, phone_number_id: str):
 
 
 # ─── 7) Interactive Bedbug FAQ List ───────────────────────────────────────────
-
 def send_bedbug_faq_list(to: str, phone_number_id: str):
     """
     Sends an interactive list of Bedbug‐related FAQs.
@@ -295,7 +284,8 @@ def send_bedbug_faq_list(to: str, phone_number_id: str):
 
 def process_bedbug_faq_response(to: str, faq_id: str):
     """
-    After tapping one of the FAQ rows, send back the corresponding answer as text.
+    After tapping one of the FAQ rows, send back the corresponding answer as text,
+    then re‐send the FAQ list so user can pick another question.
     """
     faq_answers = {
         "bbfaq_safe": (
@@ -348,7 +338,6 @@ def process_bedbug_faq_response(to: str, faq_id: str):
 
 
 # ─── 8) Helper: If “Bedroom(s)” was chosen, but count not yet asked ─────────────
-
 def _maybe_ask_bedroom_count(to: str, phone_number_id: str):
     """
     If “Bedroom(s)” is among affected_areas but bedroom_count not filled:
@@ -356,33 +345,32 @@ def _maybe_ask_bedroom_count(to: str, phone_number_id: str):
     """
     state = get_user_state(BEDBUG_PREFIX, to) or {}
     areas = state.get("affected_areas", [])
+
     if "Bedroom(s)" in areas and "bedbug_bedroom_count" not in state:
         send_bedbug_bedroom_count_prompt(to, phone_number_id)
     elif "bedbug_count" not in state:
         send_bedbug_count_prompt(to, phone_number_id)
     else:
-        # All counts collected, show summary
+        # All counts collected → show summary
         send_bedbug_summary(to, phone_number_id)
 
 
 # ─── 9) Main Flow‐Handler: handle_bedbug_flow ─────────────────────────────────
-
 def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
     """
     Main driver for the Bedbug flow. 
     Called by dispatcher.py when Redis state for prefix="bedbug" exists (or when 'Need help on Bedbugs!' is tapped).
     """
     state = user_state or {}
-    step = state.get("step", "")
+    step  = state.get("step", "")
     msg_type = message.get("type")  # "text", "button" or "interactive"
 
+    # Helper to extract quick‐reply button payload
     def extract_button_payload(msg: dict) -> str:
         if msg.get("type") == "button":
             return msg["button"]["payload"]
-        if (
-            msg.get("type") == "interactive" 
-            and msg["interactive"].get("type") == "button_reply"
-        ):
+        if (msg.get("type") == "interactive" 
+                and msg["interactive"].get("type") == "button_reply"):
             return msg["interactive"]["button_reply"]["id"]
         return ""
 
@@ -401,7 +389,7 @@ def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
             payload_lower = payload.lower()
             print(f"[DEBUG] handle_bedbug_flow: BUTTON payload='{payload_lower}' from {from_number}")
             state = user_state or {}
-            step = state.get("step", "")
+            step  = state.get("step", "")
 
             # 1) From Main Menu: “Need help on Bedbugs!” → show the initial menu
             if payload_lower == "need help on bedbugs!":
@@ -436,21 +424,21 @@ def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
 
                 if payload_lower == "return_main_menu":
                     clear_user_state(BEDBUG_PREFIX, from_number)
-                    from flows.car_fumigation import send_main_menu
+                    from flows.car_fumigation import send_main_menu  # noqa: F401
                     send_main_menu(
                         to=from_number,
                         phone_number_id=os.getenv("PHONE_NUMBER_ID")
                     )
                     return
 
-                # Unrecognized button
+                # Unrecognized button on bedbug_option
                 send_text_message(
                     to=from_number,
                     body="Sorry, I didn’t understand that. Type 'reset' to start over."
                 )
                 return
 
-            # 3) “Add Another Area?” (step == "bedbug_waiting_area_add_confirmation")
+            # 3) “Add Another Area?” confirmation (step == "bedbug_waiting_area_add_confirmation")
             if step == "bedbug_waiting_area_add_confirmation":
                 if payload_lower == "bedbug_add_area_yes":
                     state["step"] = "bedbug_select_area"
@@ -462,7 +450,7 @@ def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
                     return
 
                 if payload_lower == "bedbug_add_area_no":
-                    # Remove the awaiting flag, then proceed
+                    # Remove the awaiting flag, then proceed to counts
                     if "awaiting_area_add_confirmation" in state:
                         del state["awaiting_area_add_confirmation"]
                     set_user_state(BEDBUG_PREFIX, from_number, state)
@@ -475,17 +463,17 @@ def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
                 )
                 return
 
-            # 4) Bedroom‐count confirmation (step == "bedbug_waiting_bedroom_count")
+            # 4) Bedroom‐count selection (step == "bedbug_waiting_bedroom_count")
             if step == "bedbug_waiting_bedroom_count":
                 count_map = {
                     "bedbug_bed_count_1": "1 Bedroom affected",
                     "bedbug_bed_count_2": "2 Bedrooms affected",
                     "bedbug_bed_count_3": "3+ Bedrooms affected"
                 }
-                choice_id = extract_button_payload(message)
-                selected_count = count_map.get(choice_id, "")
+                selected_count = count_map.get(payload, "")
                 state["bedbug_bedroom_count"] = selected_count
-                # Now ask if want to add another area
+
+                # Now ask if user wants to add another area
                 state["step"] = "bedbug_waiting_area_add_confirmation"
                 set_user_state(BEDBUG_PREFIX, from_number, state)
                 send_bedbug_area_add_confirmation(
@@ -494,7 +482,7 @@ def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
                 )
                 return
 
-            # 5) Overall‐count selection confirmation (step == "bedbug_waiting_count_selection")
+            # 5) Overall‐count selection (step == "bedbug_waiting_count_selection")
             if step == "bedbug_waiting_count_selection":
                 count_map = {
                     "bedbug_count_feel":   "Not seen, but felt",
@@ -502,9 +490,8 @@ def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
                     "bedbug_count_11to30": "11–30 spotted",
                     "bedbug_count_more30": "More than 30 spotted"
                 }
-                choice_id = extract_button_payload(message)
-                if choice_id == "bedbug_count_others":
-                    # Ask for text entry
+                if payload == "bedbug_count_others":
+                    # Ask for free‐form count text
                     state["step"] = "bedbug_waiting_count_text"
                     set_user_state(BEDBUG_PREFIX, from_number, state)
                     send_text_message(
@@ -512,9 +499,10 @@ def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
                         body="Please specify the approximate number of bedbugs:"
                     )
                     return
+
                 else:
-                    state["bedbug_count"] = count_map.get(choice_id, "")
-                    # Move to summary
+                    state["bedbug_count"] = count_map.get(payload, "")
+                    # Move to final summary
                     state["step"] = "bedbug_waiting_confirmation"
                     set_user_state(BEDBUG_PREFIX, from_number, state)
                     send_bedbug_summary(
@@ -526,17 +514,16 @@ def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
             # 6) Final summary confirmation (step == "bedbug_waiting_confirmation")
             if step == "bedbug_waiting_confirmation":
                 if payload_lower == "bedbug_confirm_yes":
-                    # Connect to agent
+                    # Connect to agent & send Bedbug FAQ
                     hold_on_text = (
                         "Hold on tight—we’re summoning a real, living, breathing, functioning human support agent for you! "
                         "They’ll join this chat as soon as they're available. In the meantime, feel free to explore our other services and read our FAQ!"
                     )
                     send_text_message(to=from_number, body=hold_on_text)
 
-                    # Slight delay before FAQ list so it isn’t dropped
+                    # Small delay so the FAQ isn’t dropped
                     time.sleep(1)
 
-                    # Send Bedbug FAQ
                     send_bedbug_faq_list(
                         to=from_number,
                         phone_number_id=os.getenv("PHONE_NUMBER_ID")
@@ -571,15 +558,14 @@ def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
         print(f"[DEBUG] handle_bedbug_flow: LIST payload='{choice_id}' from {from_number}")
 
         state = user_state or {}
-        step = state.get("step", "")
+        step  = state.get("step", "")
 
         # 1) Picking an affected area (step == "bedbug_waiting_area_selection")
         if step == "bedbug_waiting_area_selection":
-            # Initialize array if missing
             state.setdefault("affected_areas", [])
 
             if choice_id == "bedbug_area_others":
-                # Ask user to specify custom area by text
+                # Ask user to specify a custom area by text
                 state["step"] = "bedbug_waiting_other_area"
                 set_user_state(BEDBUG_PREFIX, from_number, state)
                 send_text_message(
@@ -608,6 +594,7 @@ def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
             if selected_area:
                 state["affected_areas"].append(selected_area)
                 set_user_state(BEDBUG_PREFIX, from_number, state)
+
             # Ask if user wants to add another area
             state["step"] = "bedbug_waiting_area_add_confirmation"
             set_user_state(BEDBUG_PREFIX, from_number, state)
@@ -617,17 +604,11 @@ def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
             )
             return
 
-        # 2) After Bedroom count (step == "bedbug_waiting_bedroom_count") 
-        #    → this is handled in the button‐handler above, since bedroom count is a button/list
-
-        # 3) After Overall count (step == "bedbug_waiting_count_selection")
-        #    → handled in the button‐handler above
-
     # ─── D) Handle plain‐text input for “Others” or custom count ─────────────────
     if msg_type == "text":
         text_body = message["text"]["body"].strip()
-        state = user_state or {}
-        step = state.get("step", "")
+        state     = user_state or {}
+        step      = state.get("step", "")
 
         # 1) If waiting for a custom “Other area” name
         if step == "bedbug_waiting_other_area":

@@ -307,7 +307,7 @@ def send_day_selection_prompt(to: str, phone_number_id: str):
 
 
 # =====================================================================
-# 10) “Which Time?” → Interactive Button Prompt
+# 10) “Which Time?” → Interactive Button Prompt (max 3 buttons)
 # =====================================================================
 def send_time_selection_prompt(to: str, phone_number_id: str, chosen_date: str):
     state = get_user_state("carfum", to) or {}
@@ -326,7 +326,7 @@ def send_time_selection_prompt(to: str, phone_number_id: str, chosen_date: str):
         "• Morning (10AM to 12PM)\n"
         "• Afternoon (12PM to 6PM)\n"
         "• Evening (6PM to 11:59PM)\n\n"
-        "Or enter a custom time (e.g. \"18:30\" or \"6:30pm\")."
+        "If you need a different time, simply type it (e.g. \"18:30\" or \"6:30pm\")."
     )
     payload = {
         "to": to,
@@ -339,8 +339,7 @@ def send_time_selection_prompt(to: str, phone_number_id: str, chosen_date: str):
                 "buttons": [
                     {"type": "reply", "reply": {"id": "time_morning",   "title": "Morning"}},
                     {"type": "reply", "reply": {"id": "time_afternoon", "title": "Afternoon"}},
-                    {"type": "reply", "reply": {"id": "time_evening",   "title": "Evening"}},
-                    {"type": "reply", "reply": {"id": "time_custom",    "title": "Enter Time"}}
+                    {"type": "reply", "reply": {"id": "time_evening",   "title": "Evening"}}
                 ]
             }
         }
@@ -662,26 +661,15 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                     return
 
             # G) “Which Time?” step = collect_time_option
-            if step == "collect_time_option" and payload_lower in ["time_morning", "time_afternoon", "time_evening", "time_custom"]:
+            if step == "collect_time_option" and payload_lower in ["time_morning", "time_afternoon", "time_evening"]:
                 if payload_lower == "time_morning":
                     state["appointment_time"] = "10:00"
                 elif payload_lower == "time_afternoon":
                     state["appointment_time"] = "12:00"
-                elif payload_lower == "time_evening":
+                else:  # "time_evening"
                     state["appointment_time"] = "18:00"
-                else:  # "time_custom"
-                    state["step"] = "collect_custom_time_text"
-                    set_user_state(prefix, from_number, state)
-                    send_text_message(
-                        to=from_number,
-                        body=(
-                            "Please type your preferred time in HH:MM (24-hour) or HH:MMam/pm (12-hour).  \n"
-                            "For example: `18:30` or `6:30pm`"
-                        )
-                    )
-                    return
 
-                # If they tapped one of the preset slots:
+                # Move on to final details
                 state["step"] = "collect_final_details"
                 set_user_state(prefix, from_number, state)
                 send_text_message(
@@ -966,7 +954,45 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             )
             return
 
-        # F) collect_final_details (single comma-separated line)
+        # F) collect_time_option: user typed a free-form time
+        if step == "collect_time_option":
+            # Attempt to parse free-form time exactly as above
+            user_time = text_body.strip().upper().replace(" ", "")
+            parsed_time = None
+            try:
+                parsed_time = datetime.strptime(user_time, "%H:%M").time()
+            except Exception:
+                for fmt in ("%I:%M%p", "%I:%M%P"):
+                    try:
+                        parsed_time = datetime.strptime(user_time, fmt).time()
+                        break
+                    except Exception:
+                        continue
+
+            if parsed_time:
+                # Accept it and move to final details
+                state["appointment_time"] = parsed_time.strftime("%H:%M")
+                state["step"] = "collect_final_details"
+                set_user_state(prefix, from_number, state)
+                send_text_message(
+                    to=from_number,
+                    body=(
+                        "Great! Please reply in one sentence using **this format, separated by commas**:\n\n"
+                        "Vehicle Model, Vehicle Number, On-site Location\n"
+                        "For example:\n"
+                        "**Toyota Wish, SSS4444X, Tampines North Drive 1, Singapore 528559**"
+                    )
+                )
+                return
+            else:
+                # If parsing fails, re-prompt time selection
+                send_text_message(
+                    to=from_number,
+                    body="Sorry, I couldn’t parse that time. Please type something like `18:30` or `6:30pm`, or tap one of the buttons."
+                )
+                return
+
+        # G) collect_final_details (single comma-separated line)
         if step == "collect_final_details":
             parts = [p.strip() for p in text_body.split(",")]
             if len(parts) != 3:
@@ -1037,7 +1063,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
 
             return
 
-        # G) any other text outside expected steps
+        # H) any other text outside expected steps
         send_text_message(
             to=from_number,
             body="Sorry, I didn’t understand that. Type 'reset' to start over."

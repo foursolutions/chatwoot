@@ -2,7 +2,6 @@
 
 import os
 import time
-from datetime import datetime
 from helpers import (
     get_user_state,
     set_user_state,
@@ -92,7 +91,7 @@ def send_mold_removal_faq(to: str, phone_number_id: str):
 def process_mold_faq_response(to: str, faq_id: str):
     """
     After the user picks a particular FAQ row (IDs start with "mfaq_"), send the answer as text.
-    Then the flow will re-display the FAQ list in handle_mold_flow().
+    Then the flow will re‐display the FAQ list in handle_mold_flow().
     """
     faq_answers = {
         "mfaq_safe": (
@@ -405,6 +404,9 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
     Drives the entire Mold Remediation flow, similar to handle_car_fumigation_flow.
     We inspect user_state["step"], extract a button payload or list‐reply ID, or plain‐text,
     and advance the flow accordingly.
+
+    NOTE: We now also catch any “mfaq_…” payloads at ANY step, so users can tap FAQ
+    even after confirmation.
     """
     state = user_state or {}
     step = state.get("step", "")
@@ -418,20 +420,22 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
             return msg["interactive"]["button_reply"]["id"]
         return ""
 
-    # ─── 1) FAQ Handling (if step == "mold_faq") ─────────────────────────────────
-    if step == "mold_faq":
-        if msg_type in ["button", "interactive"]:
-            payload = extract_button_payload(message)
-            if payload and payload.startswith("mfaq_"):
-                process_mold_faq_response(from_number, payload)
-                # Re‐show FAQ list so user can pick another question
-                send_mold_removal_faq(
-                    to=from_number,
-                    phone_number_id=os.getenv("PHONE_NUMBER_ID")
-                )
-                return
+    # ─── A) FAQ Handling (any step) ─────────────────────────────────────────────
+    # If the incoming message is a list_reply whose ID starts with "mfaq_",
+    # process the FAQ answer and re‐send the FAQ list; keep the step unchanged.
+    if msg_type == "interactive" and message["interactive"].get("type") == "list_reply":
+        choice_id = message["interactive"]["list_reply"]["id"]
+        if choice_id.startswith("mfaq_"):
+            print(f"[DEBUG] handle_mold_flow: LIST payload='{choice_id}' from {from_number}")
+            process_mold_faq_response(from_number, choice_id)
+            # Re‐show FAQ list so user can pick another question
+            send_mold_removal_faq(
+                to=from_number,
+                phone_number_id=os.getenv("PHONE_NUMBER_ID")
+            )
+            return
 
-    # ─── 2) Handle quick‐reply BUTTONS (“button” or “interactive.button_reply”) ──
+    # ─── 1) Handle quick‐reply BUTTONS (“button” or “interactive.button_reply”) ──
     if msg_type in ["button", "interactive"]:
         payload = extract_button_payload(message)
         if payload:
@@ -533,8 +537,9 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
                 send_text_message(to=from_number, body="Please select 'Yes' or 'No'.")
                 return
 
-    # ─── 3) Handle interactive LIST replies (“interactive.list_reply”) ─────────────
+    # ─── 2) Handle interactive LIST replies (“interactive.list_reply”) ─────────────
     if msg_type == "interactive" and message["interactive"].get("type") == "list_reply":
+        # We already handled any mfaq_… case above. The rest of the list‐replies are area/growth picks.
         choice_id = message["interactive"]["list_reply"]["id"]
         choice_title = message["interactive"]["list_reply"]["title"]
         print(f"[DEBUG] handle_mold_flow: LIST payload='{choice_id}' from {from_number}")
@@ -549,7 +554,7 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
 
             # If user selected “Bedroom,” ask bedroom count
             if choice_id.startswith("area_bedroom"):
-                state["step"] = "mold_prompt_bedrooms"
+                state["step"] = "mold_waiting_bedroom_count"
                 set_user_state(MOLD_PREFIX, from_number, state)
                 send_bedroom_count_prompt(
                     to=from_number,
@@ -559,7 +564,7 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
 
             # If “Bathroom,” ask bathroom count
             if choice_id.startswith("area_bathroom"):
-                state["step"] = "mold_prompt_bathrooms"
+                state["step"] = "mold_waiting_bathroom_count"
                 set_user_state(MOLD_PREFIX, from_number, state)
                 send_bathroom_count_prompt(
                     to=from_number,
@@ -578,8 +583,8 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
 
         # B) After bedroom‐count
         if step == "mold_waiting_bedroom_count":
-            # Extract the number from the ID (e.g. “bedroom_count_2” → “2”)
-            count = choice_title.split()[0]  # “2 bedrooms” → “2”
+            # Extract the number from the title (e.g. “2 bedrooms” → “2”)
+            count = choice_title.split()[0]
             state["bedroom_count"] = count
             set_user_state(MOLD_PREFIX, from_number, state)
 
@@ -594,7 +599,7 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
 
         # C) After bathroom‐count
         if step == "mold_waiting_bathroom_count":
-            count = choice_title.split()[0]  # “1 bathroom” → “1”
+            count = choice_title.split()[0]
             state["bathroom_count"] = count
             set_user_state(MOLD_PREFIX, from_number, state)
 
@@ -621,9 +626,8 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
             )
             return
 
-    # ─── 4) FALLBACK: If none of the above matched, prompt user to “reset” ────────
+    # ─── 3) FALLBACK: If none of the above matched, prompt user to “reset” ────────
     send_text_message(to=from_number, body="Sorry, I can’t handle that type of message. Type 'reset' to start over.")
-
 
 
 # ─── 9) INTERNAL: Alert Company & Ask for Photos (after “Yes” on summary) ───────

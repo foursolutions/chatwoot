@@ -12,6 +12,12 @@ from helpers import (
     send_text_message
 )
 
+# ─── Internal alert numbers (without "+" or spaces) ───
+ALERT_NUMBERS = [
+    "6588662359",  # Bot number +65 88662359
+    "6587788080",  # Company number +65 87788080
+]
+
 # =====================================================================
 # 1) Main Menu (Template)
 # =====================================================================
@@ -368,7 +374,7 @@ def send_quote_summary(to: str, phone_number_id: str):
 # =====================================================================
 # 12) Car Fumigation FAQ Interactive List
 # =====================================================================
-def send_car_fumigation_faq(to, phone_number_id):
+def send_car_fumigation_faq(to, phone_number_id: str):
     payload = {
         "messaging_product": "whatsapp",
         "recipient_type": "individual",
@@ -384,12 +390,12 @@ def send_car_fumigation_faq(to, phone_number_id):
                 "sections": [{
                     "title": "FAQ Questions",
                     "rows": [
-                        {"id": "cfq_safe", "title": "Is it safe? Kids/Pets",   "description": "Safety with HACCP chemicals"},
-                        {"id": "cfq_included", "title": "Service Details",      "description": "What's included in our service?"},
-                        {"id": "cfq_warranty", "title": "Our Warranty",          "description": "Warranty information"},
-                        {"id": "cfq_preparation", "title": "Preparation",        "description": "What to prepare before service"},
-                        {"id": "cfq_duration", "title": "Service Duration",      "description": "How long the service takes"},
-                        {"id": "cfq_payment", "title": "Payment Options",        "description": "Payment methods accepted"}
+                        {"id": "cfq_safe",       "title": "Is it safe? Kids/Pets",   "description": "Safety with HACCP chemicals"},
+                        {"id": "cfq_included",   "title": "Service Details",          "description": "What's included in our service?"},
+                        {"id": "cfq_warranty",   "title": "Our Warranty",            "description": "Warranty information"},
+                        {"id": "cfq_preparation","title": "Preparation",             "description": "What to prepare before service"},
+                        {"id": "cfq_duration",   "title": "Service Duration",        "description": "How long the service takes"},
+                        {"id": "cfq_payment",    "title": "Payment Options",         "description": "Payment methods accepted"}
                     ]
                 }]
             }
@@ -398,7 +404,7 @@ def send_car_fumigation_faq(to, phone_number_id):
     send_interactive_message(payload)
 
 
-def process_car_fumigation_faq_response(to, faq_id):
+def process_car_fumigation_faq_response(to: str, faq_id: str):
     faq_answers = {
         "cfq_safe": (
             "Our car fumigation service ensures safety for your children and pets through:\n"
@@ -452,7 +458,9 @@ def process_car_fumigation_faq_response(to, faq_id):
 # =====================================================================
 def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict):
     """
-    1) Determine whether this is a quick-reply button, an interactive list reply, or plain text.
+    1) Determine whether this is a quick-reply button (message["type"] == "button")
+       or an interactive list reply (message["interactive"]["type"] == "list_reply"),
+       or plain text (for "collect_*" steps).
     2) Extract payload/text, compare to current user_state["step"].
     3) Update Redis state accordingly.
     4) Call next send_*() function to continue the flow.
@@ -473,14 +481,14 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
     step = state.get("step", "")
 
     # ----------------------------------------------------------------
-    # 1) FAQ Handling: if step == "car_faq", handle any FAQ replies first
+    # 1) FAQ Handling: if step == "car_faq", handle FAQ replies first
     # ----------------------------------------------------------------
     # A) FAQ replies from button payloads
     if step == "car_faq" and msg_type in ["button", "interactive"]:
         payload = extract_button_payload(message)
         if payload and payload.startswith("cfq_"):
             process_car_fumigation_faq_response(from_number, payload)
-            # Re-show FAQ list for further questions
+            # Re-show FAQ list
             send_car_fumigation_faq(
                 to=from_number,
                 phone_number_id=os.getenv("PHONE_NUMBER_ID")
@@ -507,7 +515,6 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
         if payload:
             payload_lower = payload.lower()
             print(f"[DEBUG] handle_car_fumigation_flow: BUTTON/BR payload='{payload_lower}' from {from_number}")
-            # Refresh state and step
             state = user_state or {}
             step = state.get("step", "")
 
@@ -522,9 +529,8 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 )
                 return
 
-            # B) “More Info on Service” at any point
+            # B) “More Info on Service” at any point → go to FAQ
             if payload_lower in ["more info on service", "fumigation_faq"]:
-                # Switch to FAQ step
                 state["step"] = "car_faq"
                 set_user_state(prefix, from_number, state)
                 send_car_fumigation_faq(
@@ -797,7 +803,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             try:
                 # Validate DD-MM-YYYY
                 parsed = datetime.strptime(user_date, "%d-%m-%Y")
-                # If successful, store in that exact format
+                # If valid, store
                 state["appointment_date"] = user_date
                 state["step"] = "collect_time_option"
                 set_user_state(prefix, from_number, state)
@@ -856,7 +862,6 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
         if step == "collect_final_details":
             parts = [p.strip() for p in text_body.split(",")]
             if len(parts) != 3:
-                # If they didn’t send exactly three items, re-prompt:
                 send_text_message(
                     to=from_number,
                     body=(
@@ -877,10 +882,16 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             state["vehicle_number"]  = vehicle_number
             state["parking_address"] = parking_address
 
+            # Fetch needed fields from state
+            pest_encountered = state.get("pest_type", "N/A")
+            total_quote = state.get("computed_quote", "N/A")
+            appointment_date = state.get("appointment_date", "")
+            appointment_time = state.get("appointment_time", "")
+
             # Clear Redis state now that we have all info
             clear_user_state(prefix, from_number)
 
-            # Updated confirmation message
+            # 1) Send confirmation back to the customer
             send_text_message(
                 to=from_number,
                 body=(
@@ -891,11 +902,26 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                     "Connecting you to a live agent now. In the meantime, here’s our Car Fumigation FAQ:"
                 )
             )
-            # Show FAQ list immediately
+            # 2) Immediately show FAQ for any last-minute questions
             send_car_fumigation_faq(
                 to=from_number,
                 phone_number_id=os.getenv("PHONE_NUMBER_ID")
             )
+
+            # 3) Alert internal team with all details
+            alert_body = (
+                "🚨 New Car Fumigation Booking 🚨\n\n"
+                f"Client Phone Number: +{from_number}\n"
+                f"Pest Encountered: {pest_encountered}\n"
+                f"Total Estimated Quote: ${total_quote}\n"
+                f"Date/Time: {appointment_date} {appointment_time}\n"
+                f"Vehicle Model: {vehicle_model}\n"
+                f"Vehicle Number: {vehicle_number}\n"
+                f"Parking Address: {parking_address}"
+            )
+            for admin in ALERT_NUMBERS:
+                send_text_message(to=admin, body=alert_body)
+
             return
 
         # F) any other text outside expected steps
@@ -914,5 +940,3 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
         body="Sorry, I can’t handle that type of message. Type 'reset' to start over."
     )
     return
-
-

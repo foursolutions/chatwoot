@@ -1,7 +1,6 @@
 # flows/mold.py
 
 import os
-import time
 from helpers import (
     get_user_state,
     set_user_state,
@@ -12,13 +11,16 @@ from helpers import (
 
 # ─── Constants & Static Data ────────────────────────────────────────────────
 
+# Redis key prefix for Mold Remediation
 MOLD_PREFIX = "mold"
 
+# Internal numbers (without “+”) to alert when a user confirms
 ALERT_NUMBERS = [
-    "6587788080",  # Company alert number: +65 8778 8080
-    "6588662359",  # Bot number:            +65 8866 2359
+    "6587788080",  # Company alert number (+65 8778 8080)
+    "6588662359",  # Bot number (+65 8866 2359)
 ]
 
+# Available “affected‐area” options
 MOLD_AREAS = [
     {"id": "area_bedroom",    "title": "Bedroom",       "description": "Mold in bedroom(s)"},
     {"id": "area_bathroom",   "title": "Bathroom",      "description": "Mold in bathroom(s)"},
@@ -32,6 +34,7 @@ MOLD_AREAS = [
     {"id": "area_others",     "title": "Other Areas",   "description": "Unlisted areas"},
 ]
 
+# FAQ question → answer mapping
 MOLD_FAQ = {
     "mfaq_safe": (
         "Yes, our mold removal and anti-mold painting treatments are safe for children and pets.\n\n"
@@ -111,8 +114,8 @@ def send_mold_option_prompt(to: str, phone_number_id: str):
 
 def send_mold_removal_faq_with_body_header(to: str):
     """
-    Sends an interactive FAQ list. We place our “While you wait…” sentence into the list’s body,
-    rather than the header, because longer header texts often get truncated or hidden on WhatsApp.
+    Sends an interactive FAQ list. We place our “While you wait…” sentence into the list’s body
+    because longer header texts often get truncated on WhatsApp.
     """
     rows = [
         {"id": "mfaq_safe",        "title": "Is it safe? Kids/Pets",     "description": ""},
@@ -123,7 +126,6 @@ def send_mold_removal_faq_with_body_header(to: str):
         {"id": "mfaq_payment",     "title": "Payment options",            "description": ""},
     ]
 
-    # Put the “While you wait…” text into the body
     body_text = (
         "While you wait, here’s our FAQ to learn more about our mold removal service:\n\n"
         "Select a question to learn more:"
@@ -136,7 +138,6 @@ def send_mold_removal_faq_with_body_header(to: str):
         "type": "interactive",
         "interactive": {
             "type": "list",
-            # Use a very short header so WhatsApp definitely renders it
             "header": {"type": "text", "text": "Mold Removal FAQ"},
             "body": {"text": body_text},
             "footer": {"text": ""},
@@ -151,7 +152,7 @@ def send_mold_removal_faq_with_body_header(to: str):
 
 def process_mold_faq_response(to: str, faq_id: str):
     """
-    Sends the appropriate answer text when the user selects an mfaq_* row.
+    When the user picks a question (mfaq_*), send back the corresponding answer.
     """
     answer = MOLD_FAQ.get(faq_id, "Sorry, I don’t have information on that question.")
     send_text_message(to=to, body=answer)
@@ -161,12 +162,12 @@ def process_mold_faq_response(to: str, faq_id: str):
 
 def send_mold_area_selection(to: str, phone_number_id: str):
     """
-    Shows all mold‐affected areas not yet reported by the user (interactive list).
+    Displays a list of mold‐affected areas that the user has not yet reported.
     """
     state = get_user_state(MOLD_PREFIX, to) or {}
     chosen_areas = state.get("affected_areas", [])
 
-    # Filter out any titles the user has already picked
+    # Filter out areas already chosen by title
     available = [area for area in MOLD_AREAS if area["title"] not in chosen_areas]
     if not available:
         # If none remain, skip to growth‐location question
@@ -200,7 +201,7 @@ def send_mold_area_selection(to: str, phone_number_id: str):
 
 def send_bedroom_count_prompt(to: str, phone_number_id: str):
     """
-    If user chose “Bedroom,” ask how many bedrooms are affected.
+    If the user chose “Bedroom,” ask how many bedrooms are affected.
     """
     payload = {
         "messaging_product": "whatsapp",
@@ -234,7 +235,7 @@ def send_bedroom_count_prompt(to: str, phone_number_id: str):
 
 def send_bathroom_count_prompt(to: str, phone_number_id: str):
     """
-    If user chose “Bathroom,” ask how many bathrooms are affected.
+    If the user chose “Bathroom,” ask how many bathrooms are affected.
     """
     payload = {
         "messaging_product": "whatsapp",
@@ -270,8 +271,8 @@ def send_bathroom_count_prompt(to: str, phone_number_id: str):
 
 def send_add_area_confirmation_prompt(to: str, phone_number_id: str):
     """
-    After a non-countable area (e.g. living, store, kitchen, etc.) is chosen,
-    ask “Would you like to add another affected area?” (Yes/No).
+    After selecting a non‐countable area (e.g., Living, Kitchen, Furniture), ask:
+    “Would you like to add another affected area?” (Yes/No).
     """
     payload = {
         "messaging_product": "whatsapp",
@@ -300,7 +301,7 @@ def send_add_area_confirmation_prompt(to: str, phone_number_id: str):
 
 def send_mold_growth_location(to: str, phone_number_id: str):
     """
-    After all areas are reported, ask “Where is the mold growth primarily located?”
+    After reporting all areas, ask “Where is the mold growth primarily located?”
     """
     rows = [
         {"id": "growth_walls",   "title": "Walls only",        "description": ""},
@@ -335,7 +336,7 @@ def send_mold_growth_location(to: str, phone_number_id: str):
 
 def send_mold_removal_summary(to: str, phone_number_id: str):
     """
-    Summarizes all collected mold data so far, then prompts “Yes” / “No” to confirm.
+    Summarizes everything collected so far, then prompts “Yes” / “No” to confirm booking.
     """
     state = get_user_state(MOLD_PREFIX, to) or {}
     lines = ["Summary of your mold removal request:\n", "Affected Areas Reported:"]
@@ -380,22 +381,16 @@ def send_mold_removal_summary(to: str, phone_number_id: str):
     set_user_state(MOLD_PREFIX, to, state)
 
 
-# ─── 8) Internal Alert + Photo Prompt + Delayed FAQ ───────────────────────
+# ─── 8) Internal Alert + Photo Prompt + FAQ ───────────────────────────────
 
-def alert_internal_and_ask_photos(from_number: str):
+def alert_internal_and_ask_photos(to: str, user_state: dict):
     """
     1) Send an internal “🚨 New Mold Enquiry Booking 🚨” alert to ALERT_NUMBERS.
-    2) Prompt the user to upload wide-angle photos with our “Hang tight…” text.
-    3) Wait 1 second, then send the interactive FAQ list whose body is:
-       “While you wait, here’s our FAQ to learn more about our mold removal service:”
+    2) Prompt the user with “Hang tight…” and ask for wide-angle photos.
+    3) Send the interactive FAQ list (with “While you wait…” in its body).
     """
-    state = get_user_state(MOLD_PREFIX, from_number) or {}
-    if not state:
-        return
-
-    print("[DEBUG] alert_internal_and_ask_photos: entering")
-
-    client_phone = f"+{from_number}"
+    # Build and send the internal alert message
+    client_phone = f"+{to}"
     lines = [
         "🚨 New Mold Enquiry Booking 🚨",
         "",
@@ -403,62 +398,54 @@ def alert_internal_and_ask_photos(from_number: str):
         "",
         "Affected Areas Reported:"
     ]
-    for idx, area in enumerate(state.get("affected_areas", []), start=1):
+    for idx, area in enumerate(user_state.get("affected_areas", []), start=1):
         lines.append(f"{idx}.) {area}")
 
-    if "bedroom_count" in state:
-        lines.append(f"\nBedrooms affected: {state['bedroom_count']}")
-    if "bathroom_count" in state:
-        lines.append(f"Bathrooms affected: {state['bathroom_count']}")
+    if "bedroom_count" in user_state:
+        lines.append(f"\nBedrooms affected: {user_state['bedroom_count']}")
+    if "bathroom_count" in user_state:
+        lines.append(f"Bathrooms affected: {user_state['bathroom_count']}")
 
-    if "growth_location" in state:
+    if "growth_location" in user_state:
         growth_map = {
             "growth_ceiling": "Ceiling only",
             "growth_walls":   "Walls only",
             "growth_both":    "Walls & ceiling"
         }
-        chosen = growth_map.get(state["growth_location"], state["growth_location"])
+        chosen = growth_map.get(user_state["growth_location"], user_state["growth_location"])
         lines.append(f"\nGrowth Location: {chosen}")
 
     alert_text = "\n".join(lines)
 
-    # 1) Send the alert to each internal number
     for admin in ALERT_NUMBERS:
         send_text_message(to=admin, body=alert_text)
 
-    # 2) Prompt the user for photos with updated “Hang tight…” copy
-    photo_prompt = (
+    # 2) Send the “Hang tight…” prompt to the user
+    user_message = (
         "Hang tight—we’re bringing in a real, live human support agent for you!\n"
         "They’ll join the chat as soon as they’re available.\n\n"
         "In the meantime, could you please take a wide-angle photo (from the door) "
         "capturing the full room or area affected? This helps us provide a rough estimate "
         "ahead of time. Just upload the images here in this chat. 😊"
     )
-    send_text_message(to=from_number, body=photo_prompt)
+    send_text_message(to=to, body=user_message)
 
-    # *** Delay for 1 second before sending the interactive FAQ list ***
-    print("[DEBUG] alert_internal_and_ask_photos: sleeping for 1 second before FAQ")
-    time.sleep(1)
-
-    # 3) Send the interactive FAQ list with “While you wait…” text in its body
-    print("[DEBUG] alert_internal_and_ask_photos: sending FAQ list now")
-    send_mold_removal_faq_with_body_header(to=from_number)
-
-    print("[DEBUG] alert_internal_and_ask_photos: done")
+    # 3) Immediately send the interactive FAQ list
+    send_mold_removal_faq_with_body_header(to=to)
 
 
 # ─── 9) Main Flow Handler ────────────────────────────────────────────────
 
 def handle_mold_flow(from_number: str, message: dict, user_state: dict):
     """
-    Drives the entire mold remediation flow. Uses user_state["step"] to decide how
-    to interpret each incoming “text”, “button”, or “interactive” payload.
+    Drives the entire mold remediation flow. Uses user_state["step"] to decide how to
+    interpret each incoming “text”, “button”, or “interactive” payload.
     """
     state = user_state or {}
     step = state.get("step", "")
     msg_type = message.get("type")  # “text”, “button”, or “interactive”
 
-    # Helper: extract a quick‐reply button payload (id field)
+    # Helper: extract quick‐reply button payload
     def extract_button_payload(msg: dict) -> str:
         if msg.get("type") == "button":
             return msg["button"].get("payload", "")
@@ -480,7 +467,6 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
         payload = extract_button_payload(message)
         if payload:
             payload_lower = payload.lower()
-            print(f"[DEBUG] handle_mold_flow: BUTTON payload='{payload_lower}'")
 
             # Refresh state
             state = get_user_state(MOLD_PREFIX, from_number) or {}
@@ -556,7 +542,9 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
             # D) step == “mold_waiting_confirmation”
             if step == "mold_waiting_confirmation":
                 if payload_lower == "mold_confirm_yes":
-                    alert_internal_and_ask_photos(from_number)
+                    # Send internal alert, “Hang tight…” prompt, and FAQ list
+                    alert_internal_and_ask_photos(to=from_number, user_state=state)
+                    clear_user_state(MOLD_PREFIX, from_number)
                     return
 
                 elif payload_lower == "mold_confirm_no":
@@ -577,11 +565,11 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
     # ─── 3) LIST Replies (interactive.list_reply) ─────────────────────────
     if msg_type == "interactive" and message["interactive"].get("type") == "list_reply":
         selected_id = message["interactive"]["list_reply"]["id"]
-        print(f"[DEBUG] handle_mold_flow: LIST payload='{selected_id}'")
 
         state = get_user_state(MOLD_PREFIX, from_number) or {}
         step = state.get("step", "")
 
+        # A) step == “mold_select_area”
         if step == "mold_select_area":
             if selected_id == "area_others":
                 state["step"] = "mold_waiting_other_area"
@@ -614,6 +602,7 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
                 )
                 return
 
+            # Otherwise (living, kitchen, furniture, etc.)
             state["step"] = "mold_waiting_add_area_confirmation"
             set_user_state(MOLD_PREFIX, from_number, state)
             send_add_area_confirmation_prompt(
@@ -622,6 +611,7 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
             )
             return
 
+        # B) step == “mold_waiting_bedroom_count”
         if step == "mold_waiting_bedroom_count" and selected_id.startswith("bedroom_count_"):
             count = selected_id.split("_")[-1]
             state["bedroom_count"] = count
@@ -633,6 +623,7 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
             )
             return
 
+        # C) step == “mold_waiting_bathroom_count”
         if step == "mold_waiting_bathroom_count" and selected_id.startswith("bathroom_count_"):
             count = selected_id.split("_")[-1]
             state["bathroom_count"] = count
@@ -644,6 +635,7 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
             )
             return
 
+        # D) step == “mold_waiting_growth_location”
         if step == "mold_waiting_growth_location":
             if selected_id == "growth_others":
                 state["step"] = "mold_waiting_growth_other"
@@ -655,7 +647,7 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
                 return
             else:
                 state["growth_location"] = selected_id
-                state["step"] = ""
+                state["step"] = ""  # Move to summary
                 set_user_state(MOLD_PREFIX, from_number, state)
                 send_mold_removal_summary(
                     to=from_number,
@@ -663,21 +655,18 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
                 )
                 return
 
-        # Fallback if nothing matched
+        # Fallback if no step matches
         send_text_message(
             to=from_number,
             body="Sorry, I didn’t understand that. Type 'reset' to start over."
         )
         return
 
-    # ─── 4) Plain Text Handling ─────────────────────────────────────────────
-
+    # ─── 4) Plain-Text Handling ─────────────────────────────────────────────
     if msg_type == "text":
         text_body = message["text"]["body"].strip()
         state = get_user_state(MOLD_PREFIX, from_number) or {}
         step = state.get("step", "")
-
-        print(f"[DEBUG] handle_mold_flow: TEXT at step='{step}' → '{text_body}'")
 
         if step == "mold_waiting_other_area":
             state.setdefault("affected_areas", []).append("Other: " + text_body)
@@ -691,7 +680,7 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
 
         if step == "mold_waiting_growth_other":
             state["growth_location"] = text_body
-            state["step"] = ""
+            state["step"] = ""  # Move to summary
             set_user_state(MOLD_PREFIX, from_number, state)
             send_mold_removal_summary(
                 to=from_number,
@@ -699,14 +688,14 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
             )
             return
 
+        # Fallback for other free-text
         send_text_message(
             to=from_number,
             body="Sorry, I didn’t understand that. Type 'reset' to start over."
         )
         return
 
-    # ─── 5) Fallback if no branch matched ───────────────────────────────────
-    print(f"[DEBUG] handle_mold_flow: Unsupported msg_type='{msg_type}' or step='{step}'")
+    # ─── 5) Fallback (unsupported type or missing state) ───────────────────
     send_text_message(
         to=from_number,
         body="Sorry, I can’t handle that type of message. Type 'reset' to start over."

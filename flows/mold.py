@@ -16,9 +16,9 @@ MOLD_PREFIX = "mold"
 
 # List of possible affected areas with IDs, titles, and descriptions
 MOLD_AREAS = [
-    {"id": "area_bedroom", "title": "Bedroom",     "description": "Bedrooms affected"},
-    {"id": "area_bathroom", "title": "Bathroom",   "description": "Bathrooms affected"},
-    {"id": "area_living",   "title": "Living Room","description": "Living area affected"},
+    {"id": "area_bedroom",  "title": "Bedroom",     "description": "Bedrooms affected"},
+    {"id": "area_bathroom", "title": "Bathroom",    "description": "Bathrooms affected"},
+    {"id": "area_living",   "title": "Living Room", "description": "Living area affected"},
     {"id": "area_kitchen",  "title": "Kitchen",     "description": "Kitchen area affected"},
     {"id": "area_others",   "title": "Other",       "description": "Other areas not listed above"}
 ]
@@ -70,7 +70,7 @@ def send_mold_area_selection(to: str, phone_number_id: str):
     # Filter out already‐selected area titles
     available = [area for area in MOLD_AREAS if area["title"] not in selected]
     if not available:
-        # If nothing left to choose, move to growth location
+        # Nothing left? Skip directly to growth location
         send_mold_growth_location(to, phone_number_id)
         return
 
@@ -92,8 +92,7 @@ def send_mold_area_selection(to: str, phone_number_id: str):
         }
     }
     send_interactive_message(payload)
-    # Note: the “step” remains "mold_select_area" (set earlier). We do NOT overwrite it here.
-    # Once the user taps a list‐row, handle_mold_flow will process it.
+    # Note: we do NOT overwrite state["step"] here; it was already set to "mold_select_area" just before calling this.
 
 
 # ─── 3) “Other Areas” Confirmation Prompt ────────────────────────────────────────
@@ -140,9 +139,9 @@ def send_bedroom_count_prompt(to: str, phone_number_id: str):
                 "sections": [{
                     "title": "Bedrooms",
                     "rows": [
-                        {"id": "bedroom_count_1", "title": "1",   "description": ""},
-                        {"id": "bedroom_count_2", "title": "2",   "description": ""},
-                        {"id": "bedroom_count_3", "title": "3+",  "description": ""}
+                        {"id": "bedroom_count_1", "title": "1",  "description": ""},
+                        {"id": "bedroom_count_2", "title": "2",  "description": ""},
+                        {"id": "bedroom_count_3", "title": "3+", "description": ""}
                     ]
                 }]
             }
@@ -170,9 +169,9 @@ def send_bathroom_count_prompt(to: str, phone_number_id: str):
                 "sections": [{
                     "title": "Bathrooms",
                     "rows": [
-                        {"id": "bathroom_count_1", "title": "1",   "description": ""},
-                        {"id": "bathroom_count_2", "title": "2",   "description": ""},
-                        {"id": "bathroom_count_3", "title": "3+",  "description": ""}
+                        {"id": "bathroom_count_1", "title": "1",  "description": ""},
+                        {"id": "bathroom_count_2", "title": "2",  "description": ""},
+                        {"id": "bathroom_count_3", "title": "3+", "description": ""}
                     ]
                 }]
             }
@@ -303,7 +302,7 @@ def send_mold_removal_faq(to: str, phone_number_id: str):
         }
     }
     send_interactive_message(payload)
-    # Note: the “step” remains "mold_faq" (set earlier). No overwrite here.
+    # “step” remains "mold_faq" so the handler can catch list‐replies.
 
 
 def process_mold_faq_response(to: str, faq_id: str):
@@ -320,8 +319,8 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
     Drives the entire Mold Remediation flow. Uses user_state["step"] to route
     list‐replies, button quick‐replies, and plain text through each stage.
     """
-    state = user_state or {}
-    step  = state.get("step", "")
+    state    = user_state or {}
+    step     = state.get("step", "")
     msg_type = message.get("type")  # "text", "button", or "interactive"
 
     # ── Helper to extract a quick‐reply button ID ────────────────────────────────
@@ -339,7 +338,7 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
             payload = extract_button_payload(message)
             if payload and payload.startswith("mfaq_"):
                 process_mold_faq_response(from_number, payload)
-                # Re‐show FAQ list so user can pick another question
+                # Re‐show the FAQ list so they can pick another question
                 send_mold_removal_faq(
                     to=from_number,
                     phone_number_id=os.getenv("PHONE_NUMBER_ID")
@@ -387,7 +386,6 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
             if step == "mold_option":
                 # “Request a Quotation”
                 if payload_lower == "mold_get_quote":
-                    # Initialize state and jump to area selection
                     new_state = {"step": "mold_select_area", "affected_areas": []}
                     set_user_state(MOLD_PREFIX, from_number, new_state)
                     send_mold_area_selection(
@@ -458,13 +456,36 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
                     body="Please specify the affected area not listed above:"
                 )
                 return
+
+            # If Bedroom: prompt count
+            elif selected_id == "area_bedroom":
+                state["affected_areas"] = state.get("affected_areas", []) + ["Bedroom"]
+                state["step"] = "mold_waiting_bedroom_count"
+                set_user_state(MOLD_PREFIX, from_number, state)
+                send_bedroom_count_prompt(
+                    to=from_number,
+                    phone_number_id=os.getenv("PHONE_NUMBER_ID")
+                )
+                return
+
+            # If Bathroom: prompt count
+            elif selected_id == "area_bathroom":
+                state["affected_areas"] = state.get("affected_areas", []) + ["Bathroom"]
+                state["step"] = "mold_waiting_bathroom_count"
+                set_user_state(MOLD_PREFIX, from_number, state)
+                send_bathroom_count_prompt(
+                    to=from_number,
+                    phone_number_id=os.getenv("PHONE_NUMBER_ID")
+                )
+                return
+
+            # For Living Room or Kitchen: no count required, go straight to “add another area?”
             else:
                 area_obj = next((a for a in MOLD_AREAS if a["id"] == selected_id), None)
                 if area_obj:
-                    chosen_title = area_obj["title"]
-                    state.setdefault("affected_areas", []).append(chosen_title)
+                    title = area_obj["title"]
+                    state["affected_areas"] = state.get("affected_areas", []) + [title]
 
-                # Now ask if user wants to add another area
                 state["step"] = "mold_waiting_add_area_confirmation"
                 set_user_state(MOLD_PREFIX, from_number, state)
                 send_add_area_confirmation_prompt(
@@ -525,8 +546,7 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
 
         # A) If we asked for “Other Area” text
         if step == "mold_waiting_other_area":
-            state.setdefault("affected_areas", []).append("Other: " + text_body)
-            # Now ask if user wants to add another area
+            state["affected_areas"] = state.get("affected_areas", []) + ["Other: " + text_body]
             state["step"] = "mold_waiting_add_area_confirmation"
             set_user_state(MOLD_PREFIX, from_number, state)
             send_add_area_confirmation_prompt(

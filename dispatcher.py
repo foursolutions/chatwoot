@@ -13,7 +13,7 @@ from helpers import (
     send_text_message,
 )
 from flows import car_fumigation
-from flows import mold  # << Changed: import mold.py instead of mold_remediation
+from flows import mold  # Import the mold flow file (mold.py)
 
 app = Flask(__name__)
 
@@ -98,8 +98,7 @@ def receive_message():
                 )
                 return make_response("Reset: Main menu sent", 200)
 
-            # If user typed "menu" or there is no existing state → send main menu
-            # But first, if they typed “need help on mold!”, route them immediately
+            # If user typed "need help on mold!", start mold flow immediately
             if text_body == "need help on mold!":
                 print(f"[DEBUG] 'need help on mold!' detected for {from_number}. Starting mold flow.")
                 clear_user_state(REDIS_PREFIX_MOLD, from_number)
@@ -111,7 +110,7 @@ def receive_message():
                 )
                 return make_response("Mold flow started", 200)
 
-            # If they typed “need help on pest!” or “need help on pest” (just in case)
+            # If they typed “need help on pest!”, start car flow immediately
             if text_body in ["need help on pest!", "need help on pest"]:
                 print(f"[DEBUG] 'need help on pest!' detected for {from_number}. Starting car flow.")
                 clear_user_state(REDIS_PREFIX_CAR, from_number)
@@ -147,7 +146,7 @@ def receive_message():
                 )
                 return make_response("Car flow TEXT handled", 200)
 
-            # If no active flow & not “menu” or “reset”, show fallback
+            # If no active flow & not “menu” or “reset”, show main menu
             if text_body == "menu" or not (state_car or state_mold):
                 print(f"[DEBUG] Sending main menu to {from_number} (text_body='{text_body}')")
                 clear_user_state(REDIS_PREFIX_CAR, from_number)
@@ -204,6 +203,38 @@ def receive_message():
         # ─── 3) Quick-reply BUTTON payloads ─────────────────────────────────────────
         elif msg_type == "button":
             print(f"[DEBUG] Received BUTTON payload from {from_number}: {json.dumps(message)}")
+
+            # Extract the button‐payload string
+            button_id = ""
+            if message.get("type") == "button":
+                button_id = message["button"].get("payload", "")
+            payload_lower = button_id.lower()
+
+            # 1) If they tapped “Need help on Mold!”, start the mold flow immediately
+            if payload_lower == "need help on mold!":
+                print(f"[DEBUG] 'Need help on Mold!' BUTTON detected for {from_number}. Starting mold flow.")
+                clear_user_state(REDIS_PREFIX_MOLD, from_number)
+                new_state = {"step": "mold_option", "affected_areas": []}
+                set_user_state(REDIS_PREFIX_MOLD, from_number, new_state)
+                mold.send_mold_option_prompt(
+                    to=from_number,
+                    phone_number_id=PHONE_NUMBER_ID
+                )
+                return make_response("Mold flow started via BUTTON", 200)
+
+            # 2) If they tapped “Need help on Pest!”, start the car flow immediately
+            if payload_lower in ["need help on pest!", "need help on pest"]:
+                print(f"[DEBUG] 'Need help on Pest!' BUTTON detected for {from_number}. Starting car flow.")
+                clear_user_state(REDIS_PREFIX_CAR, from_number)
+                new_state = {"step": "choose_service"}
+                set_user_state(REDIS_PREFIX_CAR, from_number, new_state)
+                car_fumigation.send_pest_control_list(
+                    to=from_number,
+                    phone_number_id=PHONE_NUMBER_ID
+                )
+                return make_response("Car flow started via BUTTON", 200)
+
+            # 3) If there’s an active Mold state, delegate to mold.handle_mold_flow
             state_mold = get_user_state(REDIS_PREFIX_MOLD, from_number)
             if state_mold:
                 mold.handle_mold_flow(
@@ -213,6 +244,7 @@ def receive_message():
                 )
                 return make_response("Mold flow BUTTON handled", 200)
 
+            # 4) If there’s an active Car state, delegate to car_fumigation
             state_car = get_user_state(REDIS_PREFIX_CAR, from_number)
             if state_car:
                 car_fumigation.handle_car_fumigation_flow(
@@ -222,7 +254,7 @@ def receive_message():
                 )
                 return make_response("Car flow BUTTON handled", 200)
 
-            # Otherwise, fallback
+            # 5) Otherwise, no flow is active—send a fallback prompt
             send_text_message(
                 to=from_number,
                 body="Please tap 'Need help on Pest!' or 'Need help on Mold!' to begin."

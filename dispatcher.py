@@ -13,7 +13,7 @@ from helpers import (
     send_text_message,
 )
 from flows import car_fumigation
-from flows import mold_remediation  # << New import for Mold flow
+from flows import mold  # << Changed: import mold.py instead of mold_remediation
 
 app = Flask(__name__)
 
@@ -105,7 +105,7 @@ def receive_message():
                 clear_user_state(REDIS_PREFIX_MOLD, from_number)
                 new_state = {"step": "mold_option", "affected_areas": []}
                 set_user_state(REDIS_PREFIX_MOLD, from_number, new_state)
-                mold_remediation.send_mold_option_prompt(
+                mold.send_mold_option_prompt(
                     to=from_number,
                     phone_number_id=PHONE_NUMBER_ID
                 )
@@ -130,7 +130,7 @@ def receive_message():
             # If there’s an active Mold flow, delegate to it
             if state_mold:
                 print(f"[DEBUG] Delegating TEXT to handle_mold_flow for {from_number}, step={state_mold.get('step')}")
-                mold_remediation.handle_mold_flow(
+                mold.handle_mold_flow(
                     from_number=from_number,
                     message=message,
                     user_state=state_mold
@@ -177,7 +177,7 @@ def receive_message():
             # Check which flow is active. If mold state exists, route to mold:
             state_mold = get_user_state(REDIS_PREFIX_MOLD, from_number)
             if state_mold:
-                mold_remediation.handle_mold_flow(
+                mold.handle_mold_flow(
                     from_number=from_number,
                     message=message,
                     user_state=state_mold
@@ -206,7 +206,7 @@ def receive_message():
             print(f"[DEBUG] Received BUTTON payload from {from_number}: {json.dumps(message)}")
             state_mold = get_user_state(REDIS_PREFIX_MOLD, from_number)
             if state_mold:
-                mold_remediation.handle_mold_flow(
+                mold.handle_mold_flow(
                     from_number=from_number,
                     message=message,
                     user_state=state_mold

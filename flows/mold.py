@@ -63,7 +63,7 @@ def send_mold_option_prompt(to: str, phone_number_id: str):
 # ─── 2) “Affected Areas” List Prompt ────────────────────────────────────────────
 def send_mold_area_selection(to: str, phone_number_id: str):
     """
-    Step: List out all MOLD_AREAS as a WhatsApp interactive list. 1 entry at a time.
+    Step: List out all MOLD_AREAS as a WhatsApp interactive list.
     """
     # Fetch existing selected areas (if any) so we don’t resend them
     state = get_user_state(MOLD_PREFIX, to) or {}
@@ -457,7 +457,8 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
                     chosen_title = area_obj["title"]
                     state.setdefault("affected_areas", []).append(chosen_title)
 
-                state.pop("step", None)
+                # Now ask if user wants to add another area
+                state["step"] = "mold_waiting_add_area_confirmation"
                 set_user_state(MOLD_PREFIX, from_number, state)
                 send_add_area_confirmation_prompt(
                     to=from_number,
@@ -469,7 +470,7 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
         if step == "mold_waiting_bedroom_count" and selected_id.startswith("bedroom_count_"):
             count = selected_id.split("_")[-1]
             state["bedroom_count"] = count
-            state.pop("step", None)
+            state["step"] = "mold_waiting_add_area_confirmation"
             set_user_state(MOLD_PREFIX, from_number, state)
             send_add_area_confirmation_prompt(
                 to=from_number,
@@ -481,7 +482,7 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
         if step == "mold_waiting_bathroom_count" and selected_id.startswith("bathroom_count_"):
             count = selected_id.split("_")[-1]
             state["bathroom_count"] = count
-            state.pop("step", None)
+            state["step"] = "mold_waiting_add_area_confirmation"
             set_user_state(MOLD_PREFIX, from_number, state)
             send_add_area_confirmation_prompt(
                 to=from_number,
@@ -515,7 +516,8 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
         # A) If we asked for “Other Area” text
         if step == "mold_waiting_other_area":
             state.setdefault("affected_areas", []).append("Other: " + text_body)
-            state.pop("step", None)
+            # Now ask if user wants to add another area
+            state["step"] = "mold_waiting_add_area_confirmation"
             set_user_state(MOLD_PREFIX, from_number, state)
             send_add_area_confirmation_prompt(
                 to=from_number,
@@ -539,6 +541,6 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
         return
 
     # ─── 5) Fallback (unsupported payload) ──────────────────────────────────────
-    print(f"[DEBUG] handle_mold_flow: Unsupported msg_type='{msg_type}'")
+    print(f"[DEBUG] handle_mold_flow: Unsupported msg_type='{msg_type}' or step='{step}'")
     send_text_message(to=from_number, body="Sorry, I can’t handle that type of message. Type 'reset' to start over.")
     return

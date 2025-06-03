@@ -12,9 +12,9 @@ from helpers import (
     send_text_message
 )
 
-# ----------------------------------------------------------------------
+# =====================================================================
 # 1) Main Menu (Template)
-# ----------------------------------------------------------------------
+# =====================================================================
 def send_main_menu(to: str, phone_number_id: str):
     greeting_name = "there"
     resp = send_template_message(
@@ -24,9 +24,10 @@ def send_main_menu(to: str, phone_number_id: str):
     )
     print(f"[DEBUG] send_main_menu → 360dialog response: {resp}")
 
-# ----------------------------------------------------------------------
+
+# =====================================================================
 # 2) Pest Control Services → Interactive List
-# ----------------------------------------------------------------------
+# =====================================================================
 def send_pest_control_list(to: str, phone_number_id: str):
     payload = {
         "to": to,
@@ -59,9 +60,10 @@ def send_pest_control_list(to: str, phone_number_id: str):
     resp = send_interactive_message(payload)
     print(f"[DEBUG] send_pest_control_list → 360dialog response: {resp}")
 
-# ----------------------------------------------------------------------
+
+# =====================================================================
 # 3) Car Fumigation Menu → Template `car_fum_menu`
-# ----------------------------------------------------------------------
+# =====================================================================
 def send_car_fum_menu(to: str, phone_number_id: str):
     resp = send_template_message(
         to=to,
@@ -70,9 +72,10 @@ def send_car_fum_menu(to: str, phone_number_id: str):
     )
     print(f"[DEBUG] send_car_fum_menu → 360dialog response: {resp}")
 
-# ----------------------------------------------------------------------
+
+# =====================================================================
 # 4) Car Fumigation Info / Quote Options → Template `car_fum_quote_options`
-# ----------------------------------------------------------------------
+# =====================================================================
 def send_car_fum_quote_options(to: str, phone_number_id: str):
     resp = send_template_message(
         to=to,
@@ -81,9 +84,10 @@ def send_car_fum_quote_options(to: str, phone_number_id: str):
     )
     print(f"[DEBUG] send_car_fum_quote_options → 360dialog response: {resp}")
 
-# ----------------------------------------------------------------------
+
+# =====================================================================
 # 5) “Select Pest Type” → Interactive List
-# ----------------------------------------------------------------------
+# =====================================================================
 def send_pest_type_list(to: str, phone_number_id: str):
     payload = {
         "to": to,
@@ -113,9 +117,10 @@ def send_pest_type_list(to: str, phone_number_id: str):
     resp = send_interactive_message(payload)
     print(f"[DEBUG] send_pest_type_list → 360dialog response: {resp}")
 
-# ----------------------------------------------------------------------
+
+# =====================================================================
 # 6) “Select Vehicle Type” → Interactive List
-# ----------------------------------------------------------------------
+# =====================================================================
 def send_vehicle_type_list(to: str, phone_number_id: str):
     payload = {
         "to": to,
@@ -147,9 +152,10 @@ def send_vehicle_type_list(to: str, phone_number_id: str):
     resp = send_interactive_message(payload)
     print(f"[DEBUG] send_vehicle_type_list → 360dialog response: {resp}")
 
-# ----------------------------------------------------------------------
+
+# =====================================================================
 # 7) “Additional Care Fee” → Quick-Reply Buttons (Luxury-Brand Prompt)
-# ----------------------------------------------------------------------
+# =====================================================================
 def send_cfadditionalfee_prompt(to: str, phone_number_id: str):
     text = (
         "Does your vehicle manufacturer fall under one of the options below?\n\n"
@@ -182,9 +188,10 @@ def send_cfadditionalfee_prompt(to: str, phone_number_id: str):
     resp = send_interactive_message(payload)
     print(f"[DEBUG] send_cfadditionalfee_prompt → 360dialog response: {resp}")
 
-# ----------------------------------------------------------------------
+
+# =====================================================================
 # 8) “Select Location” → Interactive List
-# ----------------------------------------------------------------------
+# =====================================================================
 def send_location_selection(to: str, phone_number_id: str):
     payload = {
         "to": to,
@@ -217,9 +224,10 @@ def send_location_selection(to: str, phone_number_id: str):
     resp = send_interactive_message(payload)
     print(f"[DEBUG] send_location_selection → 360dialog response: {resp}")
 
-# ----------------------------------------------------------------------
+
+# =====================================================================
 # 9) “Which Day?” → Interactive Button Prompt
-# ----------------------------------------------------------------------
+# =====================================================================
 def send_day_selection_prompt(to: str, phone_number_id: str):
     payload = {
         "to": to,
@@ -242,9 +250,10 @@ def send_day_selection_prompt(to: str, phone_number_id: str):
     resp = send_interactive_message(payload)
     print(f"[DEBUG] send_day_selection_prompt → {resp}")
 
-# ----------------------------------------------------------------------
+
+# =====================================================================
 # 10) “Which Time?” → Interactive Button Prompt (max. 3 buttons)
-# ----------------------------------------------------------------------
+# =====================================================================
 def send_time_selection_prompt(to: str, phone_number_id: str, chosen_date: str):
     state = get_user_state("carfum", to) or {}
     state["appointment_date"] = chosen_date
@@ -276,13 +285,15 @@ def send_time_selection_prompt(to: str, phone_number_id: str, chosen_date: str):
     resp = send_interactive_message(payload)
     print(f"[DEBUG] send_time_selection_prompt → {resp}")
 
-# ----------------------------------------------------------------------
+
+# =====================================================================
 # 11) “Quote Summary” → Interactive Button Template
-# ----------------------------------------------------------------------
+# =====================================================================
 def send_quote_summary(to: str, phone_number_id: str):
     state = get_user_state("carfum", to) or {}
 
     if state.get("manual_quote", False):
+        # User selected Super/Luxury Cars or Others → show "Require agent to quote"
         summary_text = (
             "On-Site Car Fumigation Quotation\n\n"
             "Below is the estimated breakdown of your quotation:\n\n"
@@ -294,6 +305,7 @@ def send_quote_summary(to: str, phone_number_id: str):
             "Please select an option below:"
         )
     else:
+        # Compute base, fee, location charge
         vehicle = state.get("vehicle", "")
         if vehicle == "vehicle_sedan":
             base_quote = 140
@@ -307,6 +319,7 @@ def send_quote_summary(to: str, phone_number_id: str):
             base_quote = 0
 
         additional_fee = 10 if state.get("continental") == "luxury_yes" else 0
+
         loc = state.get("location", "")
         if loc in ["location_north", "location_northeast", "location_east"]:
             location_charge = 20
@@ -351,9 +364,10 @@ def send_quote_summary(to: str, phone_number_id: str):
     resp = send_interactive_message(payload)
     print(f"[DEBUG] send_quote_summary → 360dialog response: {resp}")
 
-# ----------------------------------------------------------------------
+
+# =====================================================================
 # 12) Car Fumigation FAQ Interactive List
-# ----------------------------------------------------------------------
+# =====================================================================
 def send_car_fumigation_faq(to, phone_number_id):
     payload = {
         "messaging_product": "whatsapp",
@@ -370,18 +384,19 @@ def send_car_fumigation_faq(to, phone_number_id):
                 "sections": [{
                     "title": "FAQ Questions",
                     "rows": [
-                        {"id": "cfq_safe", "title": "Is it safe? Kids/Pets", "description": "Safety with HACCP chemicals"},
-                        {"id": "cfq_included", "title": "Service Details", "description": "What's included in our service?"},
-                        {"id": "cfq_warranty", "title": "Our Warranty", "description": "Warranty information"},
-                        {"id": "cfq_preparation", "title": "Preparation", "description": "What to prepare before service"},
-                        {"id": "cfq_duration", "title": "Service Duration", "description": "How long the service takes"},
-                        {"id": "cfq_payment", "title": "Payment Options", "description": "Payment methods accepted"}
+                        {"id": "cfq_safe", "title": "Is it safe? Kids/Pets",   "description": "Safety with HACCP chemicals"},
+                        {"id": "cfq_included", "title": "Service Details",      "description": "What's included in our service?"},
+                        {"id": "cfq_warranty", "title": "Our Warranty",          "description": "Warranty information"},
+                        {"id": "cfq_preparation", "title": "Preparation",        "description": "What to prepare before service"},
+                        {"id": "cfq_duration", "title": "Service Duration",      "description": "How long the service takes"},
+                        {"id": "cfq_payment", "title": "Payment Options",        "description": "Payment methods accepted"}
                     ]
                 }]
             }
         }
     }
     send_interactive_message(payload)
+
 
 def process_car_fumigation_faq_response(to, faq_id):
     faq_answers = {
@@ -431,13 +446,21 @@ def process_car_fumigation_faq_response(to, faq_id):
     answer = faq_answers.get(faq_id, "Sorry, no information is available for that question.")
     send_text_message(to, answer)
 
-# ----------------------------------------------------------------------
+
+# =====================================================================
 # 13) Universal flow-handler: handle_car_fumigation_flow
-# ----------------------------------------------------------------------
+# =====================================================================
 def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict):
+    """
+    1) Determine whether this is a quick-reply button, an interactive list reply, or plain text.
+    2) Extract payload/text, compare to current user_state["step"].
+    3) Update Redis state accordingly.
+    4) Call next send_*() function to continue the flow.
+    """
     prefix = "carfum"
     msg_type = message.get("type")  # "text", "button", or "interactive"
 
+    # ─── Helper to extract quick-reply payload ───
     def extract_button_payload(msg: dict) -> str:
         if msg.get("type") == "button":
             return msg["button"]["payload"]
@@ -445,16 +468,50 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             return msg["interactive"]["button_reply"]["id"]
         return ""
 
-    # ---- 1) Handle quick-reply BUTTONS ----
+    # Retrieve or initialize state
+    state = user_state or {}
+    step = state.get("step", "")
+
+    # ----------------------------------------------------------------
+    # 1) FAQ Handling: if step == "car_faq", handle any FAQ replies first
+    # ----------------------------------------------------------------
+    # A) FAQ replies from button payloads
+    if step == "car_faq" and msg_type in ["button", "interactive"]:
+        payload = extract_button_payload(message)
+        if payload and payload.startswith("cfq_"):
+            process_car_fumigation_faq_response(from_number, payload)
+            # Re-show FAQ list for further questions
+            send_car_fumigation_faq(
+                to=from_number,
+                phone_number_id=os.getenv("PHONE_NUMBER_ID")
+            )
+            return
+
+    # B) FAQ replies from interactive list (list_reply)
+    if step == "car_faq" and msg_type == "interactive" and message["interactive"].get("type") == "list_reply":
+        selected_id = message["interactive"]["list_reply"]["id"]
+        if selected_id.startswith("cfq_"):
+            process_car_fumigation_faq_response(from_number, selected_id)
+            # Re-show FAQ list
+            send_car_fumigation_faq(
+                to=from_number,
+                phone_number_id=os.getenv("PHONE_NUMBER_ID")
+            )
+            return
+
+    # ----------------------------------------------------------------
+    # 2) Handle quick-reply BUTTONS (either "button" or "interactive.button_reply")
+    # ----------------------------------------------------------------
     if msg_type in ["button", "interactive"]:
         payload = extract_button_payload(message)
         if payload:
             payload_lower = payload.lower()
+            print(f"[DEBUG] handle_car_fumigation_flow: BUTTON/BR payload='{payload_lower}' from {from_number}")
+            # Refresh state and step
             state = user_state or {}
-            step = state.get("step")
+            step = state.get("step", "")
 
-            # Main flow, as before...
-
+            # A) “Need help on Pest!” from main menu
             if payload_lower == "need help on pest!":
                 clear_user_state(prefix, from_number)
                 new_state = {"step": "choose_service"}
@@ -465,13 +522,18 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 )
                 return
 
+            # B) “More Info on Service” at any point
             if payload_lower in ["more info on service", "fumigation_faq"]:
+                # Switch to FAQ step
+                state["step"] = "car_faq"
+                set_user_state(prefix, from_number, state)
                 send_car_fumigation_faq(
                     to=from_number,
                     phone_number_id=os.getenv("PHONE_NUMBER_ID")
                 )
                 return
 
+            # C) “Return to Main Menu”
             if payload_lower in ["return to main menu", "return_main_menu"]:
                 clear_user_state(prefix, from_number)
                 send_main_menu(
@@ -480,6 +542,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 )
                 return
 
+            # D) “Book Now” on quote summary → Ask “Which Day?”
             if step == "show_quote_summary" and payload_lower in ["book_appointment", "yes", "car_fum_confirm_yes"]:
                 state["step"] = "collect_day_option"
                 set_user_state(prefix, from_number, state)
@@ -489,6 +552,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 )
                 return
 
+            # E) “No” on final quote summary → back to quote summary
             if step == "show_quote_summary" and payload_lower in ["no", "return_to_quote", "car_fum_confirm_no"]:
                 state["step"] = "select_location"
                 set_user_state(prefix, from_number, state)
@@ -498,6 +562,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 )
                 return
 
+            # F) “Which Day?” step = collect_day_option
             if step == "collect_day_option" and payload_lower in ["day_today", "day_tomorrow", "day_pick"]:
                 if payload_lower == "day_today":
                     today_str = datetime.now().strftime("%d-%m-%Y")
@@ -536,12 +601,13 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                     )
                     return
 
+            # G) “Which Time?” step = collect_time_option
             if step == "collect_time_option" and payload_lower in ["time_morning", "time_afternoon", "time_custom"]:
                 if payload_lower == "time_morning":
                     state["appointment_time"] = "09:00"
                 elif payload_lower == "time_afternoon":
                     state["appointment_time"] = "13:00"
-                else:
+                else:  # "time_custom"
                     state["step"] = "collect_custom_time_text"
                     set_user_state(prefix, from_number, state)
                     send_text_message(
@@ -553,6 +619,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                     )
                     return
 
+                # If they tapped one of the two preset slots (Morning or Afternoon):
                 state["step"] = "collect_final_details"
                 set_user_state(prefix, from_number, state)
                 send_text_message(
@@ -566,6 +633,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 )
                 return
 
+            # H) “Yes”/“No” on luxury-fee prompt when step == "check_luxury"
             if step == "check_luxury" and payload_lower in ["yes", "no", "luxury_yes", "luxury_no"]:
                 if payload_lower in ["yes", "luxury_yes"]:
                     state["continental"] = "luxury_yes"
@@ -579,6 +647,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 )
                 return
 
+            # I) Unhandled button payload
             print(f"[DEBUG] Unhandled BUTTON/BR payload: '{payload_lower}' (step={step})")
             send_text_message(
                 to=from_number,
@@ -586,24 +655,19 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             )
             return
 
-    # ---- 2) Handle interactive LIST replies ----
+    # ----------------------------------------------------------------
+    # 2) Handle interactive LIST replies
+    # ----------------------------------------------------------------
     if msg_type == "interactive" and message["interactive"].get("type") == "list_reply":
         selected_id = message["interactive"]["list_reply"]["id"]
+        print(f"[DEBUG] handle_car_fumigation_flow: LIST payload='{selected_id}' from {from_number}")
+
         state = user_state or {}
-        step = state.get("step")
+        step = state.get("step", "")
 
-        # FAQ selection
-        if step == "show_quote_summary" and selected_id == "fumigation_faq":
-            state["step"] = "car_faq"
-            set_user_state(prefix, from_number, state)
-            send_car_fumigation_faq(to=from_number, phone_number_id=os.getenv("PHONE_NUMBER_ID"))
-            return
+        # A) Handling FAQ list selection was already covered above
 
-        if step == "car_faq" and selected_id.startswith("cfq_"):
-            process_car_fumigation_faq_response(from_number, selected_id)
-            return
-
-        # Main flow continues as before...
+        # B) step == "choose_service": Pest Control Services list
         if step == "choose_service":
             if selected_id == "car_fumigation":
                 state.clear()
@@ -621,6 +685,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 )
                 return
 
+        # C) step == "select_pest_type": Pest Type list
         if step == "select_pest_type":
             if selected_id == "other_pest":
                 state["step"] = "collect_other_pest_text"
@@ -640,6 +705,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 )
                 return
 
+        # D) step == "select_vehicle_type": Vehicle Type list
         if step == "select_vehicle_type":
             if selected_id == "vehicle_others":
                 state["step"] = "collect_other_vehicle_text"
@@ -664,6 +730,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 return
 
             else:
+                # One of Sedan/SUV/MPV/Vans → ask luxury-fee question
                 state["vehicle"] = selected_id
                 state["step"] = "check_luxury"
                 state["manual_quote"] = False
@@ -674,6 +741,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 )
                 return
 
+        # E) step == "select_location": Service Zone list
         if step == "select_location":
             state["location"] = selected_id
             state["step"] = "show_quote_summary"
@@ -684,6 +752,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             )
             return
 
+        # Otherwise, unexpected step
         print(f"[DEBUG] LIST reply received but step='{step}' is unexpected")
         send_text_message(
             to=from_number,
@@ -691,12 +760,16 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
         )
         return
 
-    # ---- 3) Handle plain-text replies at “collect_*” steps ----
+    # ----------------------------------------------------------------
+    # 3) Handle plain-text replies at “collect_*” steps
+    # ----------------------------------------------------------------
     if msg_type == "text":
         state = user_state or {}
-        step = state.get("step")
+        step = state.get("step", "")
         text_body = message["text"]["body"].strip()
+        print(f"[DEBUG] handle_car_fumigation_flow: TEXT at step='{step}': '{text_body}' from {from_number}")
 
+        # A) collect_other_pest_text
         if step == "collect_other_pest_text":
             state["pest_type"] = text_body
             state["step"] = "select_vehicle_type"
@@ -707,6 +780,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             )
             return
 
+        # B) collect_other_vehicle_text
         if step == "collect_other_vehicle_text":
             state["vehicle_model"] = text_body
             state["step"] = "select_location"
@@ -717,10 +791,13 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             )
             return
 
+        # C) collect_custom_date_text (user enters DD-MM-YYYY)
         if step == "collect_custom_date_text":
             user_date = text_body
             try:
+                # Validate DD-MM-YYYY
                 parsed = datetime.strptime(user_date, "%d-%m-%Y")
+                # If successful, store in that exact format
                 state["appointment_date"] = user_date
                 state["step"] = "collect_time_option"
                 set_user_state(prefix, from_number, state)
@@ -736,13 +813,16 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 )
             return
 
+        # D) collect_custom_time_text (user enters free-form time)
         if step == "collect_custom_time_text":
             user_time = text_body.strip().upper().replace(" ", "")
             parsed_time = None
 
+            # Try parsing “HH:MM” (24-hour)
             try:
                 parsed_time = datetime.strptime(user_time, "%H:%M").time()
             except Exception:
+                # Try parsing “H:MMAM/PM” or “HH:MMAM/PM”
                 for fmt in ("%I:%M%p", "%I:%M%P"):
                     try:
                         parsed_time = datetime.strptime(user_time, fmt).time()
@@ -757,6 +837,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 )
                 return
 
+            # If parsing succeeded:
             state["appointment_time"] = parsed_time.strftime("%H:%M")
             state["step"] = "collect_final_details"
             set_user_state(prefix, from_number, state)
@@ -771,9 +852,11 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             )
             return
 
+        # E) collect_final_details (single comma-separated line)
         if step == "collect_final_details":
             parts = [p.strip() for p in text_body.split(",")]
             if len(parts) != 3:
+                # If they didn’t send exactly three items, re-prompt:
                 send_text_message(
                     to=from_number,
                     body=(
@@ -794,8 +877,10 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             state["vehicle_number"]  = vehicle_number
             state["parking_address"] = parking_address
 
+            # Clear Redis state now that we have all info
             clear_user_state(prefix, from_number)
 
+            # Updated confirmation message
             send_text_message(
                 to=from_number,
                 body=(
@@ -806,15 +891,23 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                     "Connecting you to a live agent now. In the meantime, here’s our Car Fumigation FAQ:"
                 )
             )
-            send_car_fumigation_faq(to=from_number, phone_number_id=os.getenv("PHONE_NUMBER_ID"))
+            # Show FAQ list immediately
+            send_car_fumigation_faq(
+                to=from_number,
+                phone_number_id=os.getenv("PHONE_NUMBER_ID")
+            )
             return
 
+        # F) any other text outside expected steps
         send_text_message(
             to=from_number,
             body="Sorry, I didn’t understand that. Type 'reset' to start over."
         )
         return
 
+    # ----------------------------------------------------------------
+    # 4) Fallback for any other payload types
+    # ----------------------------------------------------------------
     print(f"[DEBUG] handle_car_fumigation_flow: Unsupported msg_type='{msg_type}'")
     send_text_message(
         to=from_number,

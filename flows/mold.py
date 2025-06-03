@@ -1,4 +1,4 @@
-# flows/mold.py
+# mold.py
 
 import os
 from helpers import (
@@ -92,7 +92,7 @@ def send_mold_area_selection(to: str, phone_number_id: str):
         }
     }
     send_interactive_message(payload)
-    # Note: we do NOT overwrite state["step"] here; it was already set to "mold_select_area" just before calling this.
+    # Note: we do NOT overwrite state["step"] here; it was already set to "mold_select_area" prior to calling this.
 
 
 # ─── 3) “Other Areas” Confirmation Prompt ────────────────────────────────────────
@@ -277,12 +277,12 @@ def send_mold_removal_faq(to: str, phone_number_id: str):
     Send an interactive list of FAQ questions related to mold removal.
     """
     rows = [
-        {"id": "mfaq_safe",        "title": "Is it safe? Kids/Pets",  "description": ""},
-        {"id": "mfaq_included",    "title": "What’s included?",      "description": ""},
-        {"id": "mfaq_warranty",    "title": "Do you provide a warranty?", "description": ""},
-        {"id": "mfaq_preparation", "title": "How to prepare?",        "description": ""},
-        {"id": "mfaq_duration",    "title": "How long will it take?", "description": ""},
-        {"id": "mfaq_payment",     "title": "Payment options",        "description": ""}
+        {"id": "mfaq_safe",        "title": "Is it safe? Kids/Pets",       "description": ""},
+        {"id": "mfaq_included",    "title": "What’s included?",            "description": ""},
+        {"id": "mfaq_warranty",    "title": "Do you provide a warranty?",    "description": ""},
+        {"id": "mfaq_preparation", "title": "How to prepare?",              "description": ""},
+        {"id": "mfaq_duration",    "title": "How long will it take?",       "description": ""},
+        {"id": "mfaq_payment",     "title": "Payment options",              "description": ""}
     ]
 
     payload = {
@@ -365,7 +365,7 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
             # ───────── A) Return to Main Menu ─────────────────────────────────────
             if payload_lower == "return_main_menu":
                 clear_user_state(MOLD_PREFIX, from_number)
-                from flows.car_fumigation import send_main_menu
+                from car_fumigation import send_main_menu
                 send_main_menu(
                     to=from_number,
                     phone_number_id=os.getenv("PHONE_NUMBER_ID")
@@ -415,6 +415,7 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
                     )
                     return
                 elif payload_lower == "add_area_no":
+                    # **Immediately move to Growth Location**
                     state["step"] = "mold_prompt_growth"
                     set_user_state(MOLD_PREFIX, from_number, state)
                     send_mold_growth_location(
@@ -448,6 +449,7 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
 
         # A) Area selection (step == "mold_select_area")
         if step == "mold_select_area":
+            # “Other” branch
             if selected_id == "area_others":
                 state["step"] = "mold_waiting_other_area"
                 set_user_state(MOLD_PREFIX, from_number, state)
@@ -457,7 +459,7 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
                 )
                 return
 
-            # If Bedroom: prompt count
+            # “Bedroom” branch
             elif selected_id == "area_bedroom":
                 state["affected_areas"] = state.get("affected_areas", []) + ["Bedroom"]
                 state["step"] = "mold_waiting_bedroom_count"
@@ -468,7 +470,7 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
                 )
                 return
 
-            # If Bathroom: prompt count
+            # “Bathroom” branch
             elif selected_id == "area_bathroom":
                 state["affected_areas"] = state.get("affected_areas", []) + ["Bathroom"]
                 state["step"] = "mold_waiting_bathroom_count"
@@ -479,7 +481,7 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
                 )
                 return
 
-            # For Living Room or Kitchen: no count required, go straight to “add another area?”
+            # “Living Room” or “Kitchen” branch
             else:
                 area_obj = next((a for a in MOLD_AREAS if a["id"] == selected_id), None)
                 if area_obj:
@@ -547,6 +549,7 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
         # A) If we asked for “Other Area” text
         if step == "mold_waiting_other_area":
             state["affected_areas"] = state.get("affected_areas", []) + ["Other: " + text_body]
+            # Now ask if user wants to add another area
             state["step"] = "mold_waiting_add_area_confirmation"
             set_user_state(MOLD_PREFIX, from_number, state)
             send_add_area_confirmation_prompt(

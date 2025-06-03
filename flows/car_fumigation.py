@@ -515,8 +515,8 @@ def process_car_fumigation_faq_response(to: str, faq_id: str):
 # =====================================================================
 def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict):
     """
-    1) Determine whether this is a quick-reply button (message["type"] == "button")
-       or an interactive list reply (message["interactive"]["type"] == "list_reply"),
+    1) Determine whether this is a quick-reply button (message["type"] == "button"),
+       an interactive list reply (message["interactive"]["type"] == "list_reply"),
        or plain text (for "collect_*" steps).
     2) Extract payload/text, compare to current user_state["step"].
     3) Update Redis state accordingly.
@@ -816,6 +816,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
         # F) step == "collect_date_option": user selected from upcoming dates
         if step == "collect_date_option":
             if selected_id.startswith("date_"):
+                # Extract date part: "date_09-06-2025" → "09-06-2025"
                 _, date_str = selected_id.split("_", 1)
                 state["appointment_date"] = date_str
                 state["step"] = "collect_time_option"
@@ -826,6 +827,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                     chosen_date=date_str
                 )
                 return
+
             elif selected_id == "other_dates":
                 state["step"] = "collect_custom_date_text"
                 set_user_state(prefix, from_number, state)
@@ -900,7 +902,32 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 )
             return
 
-        # D) collect_custom_time_text (user enters free-form time)
+        # D) collect_date_option: user typed a date instead of tapping a list item
+        if step == "collect_date_option":
+            user_date = text_body
+            try:
+                # Try parsing DD-MM-YYYY
+                parsed = datetime.strptime(user_date, "%d-%m-%Y")
+                # If valid, store and move to time selection
+                state["appointment_date"] = user_date
+                state["step"] = "collect_time_option"
+                set_user_state(prefix, from_number, state)
+                send_time_selection_prompt(
+                    to=from_number,
+                    phone_number_id=os.getenv("PHONE_NUMBER_ID"),
+                    chosen_date=user_date
+                )
+            except ValueError:
+                send_text_message(
+                    to=from_number,
+                    body=(
+                        "Sorry, I couldn’t parse that date. Please choose one of the listed dates "
+                        "or type a valid date in `DD-MM-YYYY`, e.g. `09-06-2025`."
+                    )
+                )
+            return
+
+        # E) collect_custom_time_text (user enters free-form time)
         if step == "collect_custom_time_text":
             user_time = text_body.strip().upper().replace(" ", "")
             parsed_time = None
@@ -939,7 +966,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             )
             return
 
-        # E) collect_final_details (single comma-separated line)
+        # F) collect_final_details (single comma-separated line)
         if step == "collect_final_details":
             parts = [p.strip() for p in text_body.split(",")]
             if len(parts) != 3:
@@ -1010,7 +1037,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
 
             return
 
-        # F) any other text outside expected steps
+        # G) any other text outside expected steps
         send_text_message(
             to=from_number,
             body="Sorry, I didn’t understand that. Type 'reset' to start over."

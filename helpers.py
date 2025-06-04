@@ -5,15 +5,13 @@ import redis
 import json
 import requests
 
-# ------------------
-#  ENV DEBUGGING
-# ------------------
-# As soon as this file is imported, print out the three critical env vars.
-# You should NOT see any extra whitespace, “None,” or empty strings here.
-API_KEY_ENV           = os.getenv("1MSG_API_KEY")
-BASE_URL_ENV          = os.getenv("1MSG_BASE_URL")
+# -------------------------------
+#  ENV VARIABLES & INITIALIZATION
+# -------------------------------
+API_KEY_ENV            = os.getenv("1MSG_API_KEY")
+BASE_URL_ENV           = os.getenv("1MSG_BASE_URL")
 TEMPLATE_NAMESPACE_ENV = os.getenv("TEMPLATE_NAMESPACE")
-REDIS_URL_ENV         = os.getenv("REDIS_URL")
+REDIS_URL_ENV          = os.getenv("REDIS_URL")
 
 print("=== ENV DEBUG ===")
 print("1MSG_API_KEY        :", repr(API_KEY_ENV))
@@ -22,13 +20,10 @@ print("TEMPLATE_NAMESPACE  :", repr(TEMPLATE_NAMESPACE_ENV))
 print("REDIS_URL           :", repr(REDIS_URL_ENV))
 print("=================\n")
 
-# ============================
-#  Configuration & Constants
-# ============================
-API_KEY            = API_KEY_ENV.strip() if API_KEY_ENV else ""
-BASE_URL           = BASE_URL_ENV.rstrip("/") if BASE_URL_ENV else ""
+API_KEY            = API_KEY_ENV.strip()            if API_KEY_ENV            else ""
+BASE_URL           = BASE_URL_ENV.rstrip("/")       if BASE_URL_ENV           else ""
 TEMPLATE_NAMESPACE = TEMPLATE_NAMESPACE_ENV.strip() if TEMPLATE_NAMESPACE_ENV else ""
-REDIS_URL          = REDIS_URL_ENV.strip() if REDIS_URL_ENV else ""
+REDIS_URL          = REDIS_URL_ENV.strip()          if REDIS_URL_ENV          else ""
 
 _missing = []
 if not API_KEY:
@@ -47,9 +42,9 @@ if _missing:
 r = redis.StrictRedis.from_url(REDIS_URL, decode_responses=True)
 
 
-# =====================================================
-#  Redis-based State Functions (unchanged)
-# =====================================================
+# ====================================
+#  Redis‐based State (unchanged)
+# ====================================
 def get_user_state(prefix: str, user_id: str) -> dict:
     key = f"{prefix}:{user_id}"
     raw = r.get(key)
@@ -67,7 +62,7 @@ def clear_user_state(prefix: str, user_id: str):
 
 
 # =====================================================
-#  Internal: call 1msg “/send” endpoint for text/interactive
+#  Internal: POST to 1msg’s `/send` (text/interactive)
 # =====================================================
 def _post_to_1msg_send(payload: dict) -> dict:
     url = f"{BASE_URL}/send"
@@ -83,33 +78,34 @@ def _post_to_1msg_send(payload: dict) -> dict:
 
 
 # =====================================================
-#  Internal: call 1msg “/sendTemplate” endpoint for templates
+#  Internal: POST to 1msg’s `/sendMessage` (for templates)
 # =====================================================
 def _post_to_1msg_send_template(payload: dict) -> dict:
-    url = f"{BASE_URL}/sendTemplate"
+    # *** KEY CHANGE: use `/sendMessage` instead of `/sendTemplate` ***
+    url = f"{BASE_URL}/sendMessage"
     headers = {
         "Content-Type": "application/json",
         "x-api-key": API_KEY
     }
-    # Print the three critical values again right before we send:
-    print(">>> SENDING to /sendTemplate:")
+    print(">>> SENDING to /sendMessage:")
     print("    API_KEY        :", repr(API_KEY))
     print("    BASE_URL       :", repr(BASE_URL))
     print("    TEMPLATE_NS    :", repr(TEMPLATE_NAMESPACE))
     print("    FULL PAYLOAD   :", json.dumps(payload))
     resp = requests.post(url, headers=headers, json=payload, timeout=10)
-    print("[DEBUG] 1msg /sendTemplate response:", resp.status_code, resp.text)
+    print("[DEBUG] 1msg /sendMessage response:", resp.status_code, resp.text)
     resp.raise_for_status()
     return resp.json()
 
 
 # =====================================================
-#  Public: send_template_message (via 1msg → 360dialog)
+#  Public: send_template_message (via `/sendMessage`)
 # =====================================================
 def send_template_message(to: str, template_name: str, template_params=None) -> dict:
     if template_params is None:
         template_params = []
 
+    # Build the “params” array exactly as 1msg expects:
     params_array = []
     if template_params:
         params_array.append({
@@ -133,7 +129,7 @@ def send_template_message(to: str, template_name: str, template_params=None) -> 
 
 
 # ===============================================================
-#  Public: send_interactive_message (via 1msg → 360dialog)
+#  Public: send_interactive_message (via `/send`)
 # ===============================================================
 def send_interactive_message(payload: dict) -> dict:
     payload.setdefault("messaging_product", "whatsapp")
@@ -141,7 +137,7 @@ def send_interactive_message(payload: dict) -> dict:
 
 
 # ================================================================
-#  Public: send_text_message (via 1msg → 360dialog)
+#  Public: send_text_message (via `/send`)
 # ================================================================
 def send_text_message(to: str, body: str) -> dict:
     payload = {

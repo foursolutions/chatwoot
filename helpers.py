@@ -65,7 +65,7 @@ def _post_to_1msg(payload: dict) -> dict:
         "x-api-key": API_KEY
     }
     resp = requests.post(url, headers=headers, json=payload, timeout=10)
-    # For debugging, you can uncomment the next line to see full 1msg responses:
+    # Uncomment for debugging if needed:
     # print("[1MSG SEND] HTTP", resp.status_code, resp.text)
     resp.raise_for_status()
     return resp.json()
@@ -88,7 +88,7 @@ def send_template_message(to: str, template_name: str, template_params=None):
     # Build body parameters exactly as 360dialog expects
     body_parameters = [{"type": "text", "text": param} for param in template_params]
 
-    # Prepend namespace so 360dialog recognizes the template:
+    # Prepend namespace so 360dialog recognizes the template
     fully_qualified = f"{TEMPLATE_NAMESPACE}:{template_name}"
 
     payload = {

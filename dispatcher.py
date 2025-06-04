@@ -39,25 +39,84 @@ def receive_message():
     try:
         print(">>>> RAW INCOMING JSON:", json.dumps(payload))
     except Exception:
-        # In case payload is not JSON‐serializable, still convert to string
         print(">>>> RAW INCOMING PAYLOAD (non‐JSON‐serializable):", str(payload))
 
     try:
-        # ─── Attempt to unwrap a 1msg‐wrapped payload ──────────────────────────────
-        # We do this in a defensive way that won’t crash if any key is missing.
         messages = None
 
-        # Check for the 1msg wrapper: payload["data"]["payload"]["360dialog"]["messages"]
-        data_section = payload.get("data") if isinstance(payload, dict) else None
-        if isinstance(data_section, dict):
-            inner_payload = data_section.get("payload")
-            if isinstance(inner_payload, dict):
-                wrapped360 = inner_payload.get("360dialog")
-                if isinstance(wrapped360, dict):
-                    messages = wrapped360.get("messages", [])
+        # ─── 1) Check if payload is the 1msg‐“WhatsApp Web” wrapper ────────────────
+        # Example format:
+        # {
+        #   "messages": [
+        #     {
+        #       "id": "...",
+        #       "body": "reset",
+        #       "fromMe": false,
+        #       "self": 0,
+        #       "isForwarded": false,
+        #       "author": "6587788080@c.us",
+        #       "time": "1749049642",
+        #       "chatId": "6587788080@c.us",
+        #       "type": "chat",
+        #       "senderName": "Four Solutions",
+        #       "caption": null,
+        #       "quotedMsgId": null,
+        #       "chatName": "6587788080"
+        #     }
+        #   ],
+        #   "instanceId": "VAN388218473"
+        # }
+        if isinstance(payload, dict) and isinstance(payload.get("messages"), list):
+            messages = payload["messages"]
 
-        # If messages is still None or empty, fall back to the old Facebook Graph format:
-        if not messages:
+        # ─── 2) If not found above, check for the 1msg “360dialog” wrapper format ───
+        # Example format:
+        # {
+        #   "data": {
+        #     "payload": {
+        #       "360dialog": {
+        #         "messages": [
+        #           {
+        #             "from": "659XXXXXXXX",
+        #             "type": "text",
+        #             "text": { "body": "hello bot" }
+        #           }
+        #         ]
+        #       }
+        #     }
+        #   }
+        # }
+        if messages is None:
+            data_section = payload.get("data")
+            if isinstance(data_section, dict):
+                inner_payload = data_section.get("payload")
+                if isinstance(inner_payload, dict):
+                    wrapped360 = inner_payload.get("360dialog")
+                    if isinstance(wrapped360, dict):
+                        messages = wrapped360.get("messages", [])
+
+        # ─── 3) If still not found, fallback to original “entry→changes→value→messages” ─
+        # Example format (Facebook Graph callback):
+        # {
+        #   "entry": [
+        #     {
+        #       "changes": [
+        #         {
+        #           "value": {
+        #             "messages": [
+        #               {
+        #                 "from": "659XXXXXXXX",
+        #                 "type": "text",
+        #                 "text": { "body": "hello bot" }
+        #               }
+        #             ]
+        #           }
+        #         }
+        #       ]
+        #     }
+        #   ]
+        # }
+        if messages is None or not isinstance(messages, list) or len(messages) == 0:
             entry_list = payload.get("entry")
             if isinstance(entry_list, list) and len(entry_list) > 0:
                 first_entry = entry_list[0]
@@ -67,24 +126,42 @@ def receive_message():
                     value_section = first_change.get("value", {})
                     messages = value_section.get("messages", [])
 
-        # If we still have no messages array, return early
+        # If we still have no messages array or it’s empty, return early
         if not isinstance(messages, list) or len(messages) == 0:
             return make_response("No messages to process", 200)
 
         # Now messages is guaranteed to be a non-empty list
-        message     = messages[0]
-        from_number = message.get("from")
-        msg_type    = message.get("type")
+        message = messages[0]
+
+        # ─── Extract “from_number” and “msg_type” according to which format we detected ───
+        # Case A: 1msg “WhatsApp Web” wrapper uses “author” or “chatId” for sender,
+        #         and “body” as text. It does not have “type":"text" in the same way.
+        if "author" in message and "body" in message:
+            # In this format, “author” is like “6587788080@c.us”. We strip “@c.us”:
+            author_full = message.get("author", "")
+            from_number = author_full.split("@")[0] if "@" in author_full else author_full
+            msg_type    = "chat"  # treat this as a text/chat message
+            text_body   = message.get("body", "").strip().lower()
+
+        else:
+            # Case B & C: “360dialog” wrapper or original Graph format have “from” and “type”
+            from_number = message.get("from")
+            msg_type    = message.get("type")
+            text_body   = ""
+            if msg_type == "text":
+                text_body = message.get("text", {}).get("body", "").strip().lower()
+            elif msg_type in ("interactive", "button_reply", "list_reply"):
+                # upward compatibility for interactive
+                pass
 
         if not from_number or not msg_type:
             # Something unexpected in the message object
             return make_response("Invalid message format", 200)
 
         # ─── Route by message type ────────────────────────────────────────────────
-        if msg_type == "text":
-            text_body = message.get("text", {}).get("body", "").strip().lower()
-
-            # If user sends "reset", clear any stored state
+        # We unify both “chat” (WhatsApp Web) and “text” (360dialog/Graph) to a text flow
+        if msg_type in ("text", "chat"):
+            # If user sends “reset”, clear all states
             if text_body == "reset":
                 clear_user_state("car", from_number)
                 clear_user_state("bedbug", from_number)
@@ -99,7 +176,7 @@ def receive_message():
                 )
                 return make_response("User session reset", 200)
 
-            # If user types "Need help on Car!", start the car fumigation flow
+            # If user types “Need help on Car!”, start the car fumigation flow
             if "need help on car" in text_body:
                 clear_user_state("bedbug", from_number)
                 clear_user_state("mold", from_number)
@@ -110,7 +187,7 @@ def receive_message():
                 )
                 return make_response("Car fumigation menu sent", 200)
 
-            # If user types "Need help on Pest!" start the pest flow (bedbug)
+            # If user types “Need help on Pest!” start the bedbug flow
             if "need help on pest" in text_body:
                 clear_user_state("car", from_number)
                 clear_user_state("mold", from_number)
@@ -121,7 +198,7 @@ def receive_message():
                 )
                 return make_response("Bedbug menu sent", 200)
 
-            # If user types "Need help on Mold!" start the mold flow
+            # If user types “Need help on Mold!” start the mold flow
             if "need help on mold" in text_body:
                 clear_user_state("car", from_number)
                 clear_user_state("bedbug", from_number)
@@ -132,7 +209,7 @@ def receive_message():
                 )
                 return make_response("Mold menu sent", 200)
 
-            # Otherwise delegate to whichever flow has an active state
+            # Otherwise, delegate to any active flow state
             car_state    = get_user_state("car", from_number)
             bedbug_state = get_user_state("bedbug", from_number)
             mold_state   = get_user_state("mold", from_number)
@@ -158,7 +235,7 @@ def receive_message():
                 return make_response("Unsupported text fallback sent", 200)
 
         elif msg_type == "interactive":
-            # For interactive replies (buttons, list selections), extract user response
+            # Extract and route interactive replies (buttons, list selections)
             interactive = message.get("interactive", {})
             i_type      = interactive.get("type")
 
@@ -220,7 +297,7 @@ def receive_message():
                 return make_response("Unhandled interactive type", 200)
 
         else:
-            # Any other message type (e.g., image, video, stickers, etc.)
+            # Any other message type (image, video, stickers, etc.)
             send_template_message(
                 to=from_number,
                 template_name="Fallback_Unhandled_Type",
@@ -241,3 +318,4 @@ def receive_message():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+

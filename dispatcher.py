@@ -161,18 +161,23 @@ def receive_message():
         # ─── Route by message type ────────────────────────────────────────────────
         # We unify both “chat” (WhatsApp Web) and “text” (360dialog/Graph) to a text flow
         if msg_type in ("text", "chat"):
-            # If user sends “reset”, clear all states and show the *actual* main menu
+            # If user sends “reset”, clear all states and send a text‐based main menu prompt
             if text_body == "reset":
                 clear_user_state("car", from_number)
                 clear_user_state("bedbug", from_number)
                 clear_user_state("mold", from_number)
 
-                # Instead of sending a plain‐text prompt, call the real send_main_menu()
-                car_fumigation.send_main_menu(
+                # Send a plain‐text prompt for the main menu
+                send_text_message(
                     to=from_number,
-                    phone_number_id=os.getenv("PHONE_NUMBER_ID")
+                    body=(
+                        "Your session has been reset. How can I help you today?\n"
+                        "• Type ‘Need help on Pest!’\n"
+                        "• Type ‘Need help on Mold!’\n"
+                        "• Type ‘Need help on Car!’"
+                    ),
                 )
-                return make_response("User session reset → main menu sent", 200)
+                return make_response("User session reset and prompt sent", 200)
 
             # If user types “need help on car” (case‐insensitive), start Car flow
             if "need help on car" in text_body:
@@ -253,17 +258,19 @@ def receive_message():
                 elif mold_state:
                     return mold.handle(from_number, message, mold_state)
                 else:
-                    # No active flow: send the real main menu again
-                    car_fumigation.send_main_menu(
+                    # No active flow: send a text fallback to guide the user
+                    send_text_message(
                         to=from_number,
-                        phone_number_id=os.getenv("PHONE_NUMBER_ID")
+                        body=(
+                            "No active flow. You can type ‘reset’ to return to the main menu."
+                        )
                     )
-                    return make_response("No active flow → main menu re-sent", 200)
+                    return make_response("No active flow, fallback sent", 200)
 
             # LIST_REPLY
             elif i_type == "list_reply":
-                list_id    = interactive["list_reply"]["id"]
-                list_text  = interactive["list_reply"]["title"].strip().lower()
+                list_id    = interactive["list_reply"].get("id")
+                list_text  = interactive["list_reply"].get("title", "").strip().lower()
 
                 car_state    = get_user_state("car", from_number)
                 bedbug_state = get_user_state("bedbug", from_number)
@@ -276,20 +283,22 @@ def receive_message():
                 elif mold_state:
                     return mold.handle(from_number, message, mold_state)
                 else:
-                    # No active flow: send the real main menu again
-                    car_fumigation.send_main_menu(
+                    # No active flow: send a text fallback to guide the user
+                    send_text_message(
                         to=from_number,
-                        phone_number_id=os.getenv("PHONE_NUMBER_ID")
+                        body=(
+                            "No active flow. You can type ‘reset’ to return to the main menu."
+                        )
                     )
-                    return make_response("No active flow → main menu re-sent", 200)
+                    return make_response("No active flow, fallback sent", 200)
 
             else:
                 # Unhandled interactive type
                 send_text_message(
                     to=from_number,
                     body=(
-                        "Sorry, I didn’t understand your selection. Please try again "
-                        "or type ‘reset’ to return to the main menu."
+                        "Sorry, I didn’t understand your selection. "
+                        "Please try again or type ‘reset’ to return to the main menu."
                     )
                 )
                 return make_response("Unhandled interactive type", 200)
@@ -302,7 +311,7 @@ def receive_message():
                 template_params=[
                     (
                         "Sorry, I can’t handle that type of message. "
-                        "Type ‘reset’ to return to the main menu."
+                        "You can type ‘reset’ to return to the main menu."
                     )
                 ]
             )

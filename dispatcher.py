@@ -19,23 +19,25 @@ from flows import mold
 
 app = Flask(__name__)
 
+VERIFY_TOKEN    = os.getenv("VERIFY_TOKEN")
+PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
+
+
 @app.route("/webhook", methods=["GET", "POST"])
 def receive_message():
     # ─────── Handle verification (GET) ────────────────────────────────────────
     if request.method == "GET":
-        verify_token = os.getenv("VERIFY_TOKEN")
-        mode         = request.args.get("hub.mode")
-        token        = request.args.get("hub.verify_token")
-        challenge    = request.args.get("hub.challenge")
-
-        if mode == "subscribe" and token == verify_token:
+        mode      = request.args.get("hub.mode")
+        token     = request.args.get("hub.verify_token")
+        challenge = request.args.get("hub.challenge")
+        if mode == "subscribe" and token == VERIFY_TOKEN:
             return make_response(challenge, 200)
         return make_response("Verification token mismatch", 403)
 
     # ─────── Handle incoming message (POST) ───────────────────────────────────
     payload = request.get_json()
 
-    # ─────── Immediate debug: log the entire incoming JSON so we can inspect it ─────
+    # ─────── Debug: log the raw JSON so we can inspect it ────────────────────
     try:
         print(">>>> RAW INCOMING JSON:", json.dumps(payload))
     except Exception:
@@ -44,78 +46,23 @@ def receive_message():
     try:
         messages = None
 
-        # ─── 1) Check if payload is the 1msg‐“WhatsApp Web” wrapper ────────────────
-        # Example format:
-        # {
-        #   "messages": [
-        #     {
-        #       "id": "...",
-        #       "body": "reset",
-        #       "fromMe": false,
-        #       "self": 0,
-        #       "isForwarded": false,
-        #       "author": "6587788080@c.us",
-        #       "time": "1749049642",
-        #       "chatId": "6587788080@c.us",
-        #       "type": "chat",
-        #       "senderName": "Four Solutions",
-        #       "caption": null,
-        #       "quotedMsgId": null,
-        #       "chatName": "6587788080@c.us"
-        #     }
-        #   ],
-        #   "instanceId": "VAN388218473"
-        # }
+        # 1) Check for 1msg “WhatsApp Web” wrapper (has top-level "messages" list)
         if isinstance(payload, dict) and isinstance(payload.get("messages"), list):
             messages = payload["messages"]
 
-        # ─── 2) If not found above, check for the 1msg “360dialog” wrapper format ───
-        # Example format:
-        # {
-        #   "data": {
-        #     "payload": {
-        #       "360dialog": {
-        #         "messages": [
-        #           {
-        #             "from": "659XXXXXXXX",
-        #             "type": "text",
-        #             "text": { "body": "hello bot" }
-        #           }
-        #         ]
-        #       }
-        #     }
-        #   }
-        # }
+        # 2) If not found, check for 1msg “360dialog” wrapper:
+        #    payload["data"]["payload"]["360dialog"]["messages"]
         if messages is None:
             data_section = payload.get("data")
             if isinstance(data_section, dict):
-                inner_payload = data_section.get("payload")
-                if isinstance(inner_payload, dict):
-                    wrapped360 = inner_payload.get("360dialog")
+                inner = data_section.get("payload")
+                if isinstance(inner, dict):
+                    wrapped360 = inner.get("360dialog")
                     if isinstance(wrapped360, dict):
                         messages = wrapped360.get("messages", [])
 
-        # ─── 3) If still not found, fallback to original “entry→changes→value→messages” ─
-        # Example format (Facebook Graph callback):
-        # {
-        #   "entry": [
-        #     {
-        #       "changes": [
-        #         {
-        #           "value": {
-        #             "messages": [
-        #               {
-        #                 "from": "659XXXXXXXX",
-        #                 "type": "text",
-        #                 "text": { "body": "hello bot" }
-        #               }
-        #             ]
-        #           }
-        #         }
-        #       ]
-        #     }
-        #   ]
-        # }
+        # 3) If still no messages, fallback to original Facebook Graph format:
+        #    payload["entry"][0]["changes"][0]["value"]["messages"]
         if messages is None or not isinstance(messages, list) or len(messages) == 0:
             entry_list = payload.get("entry")
             if isinstance(entry_list, list) and len(entry_list) > 0:
@@ -126,63 +73,54 @@ def receive_message():
                     value_section = first_change.get("value", {})
                     messages = value_section.get("messages", [])
 
-        # If we still have no messages array or it’s empty, return early
+        # If still no messages, do nothing
         if not isinstance(messages, list) or len(messages) == 0:
             return make_response("No messages to process", 200)
 
-        # Now messages is guaranteed to be a non‐empty list
+        # We now have messages[0] as the incoming message
         message = messages[0]
 
-        # ─── Extract “from_number” and “msg_type” according to which format we detected ───
-        # Case A: 1msg “WhatsApp Web” wrapper uses “author” or “chatId” for sender,
-        #         and “body” as text. It does not have “type":"text" in the same way.
+        # ─── Determine “from_number” and “msg_type” ─────────────────────────────
+        # Case A: 1msg “WhatsApp Web” wrapper (“author” + “body” fields)
         if "author" in message and "body" in message:
-            # In this format, “author” is like “6587788080@c.us”. Split off “@c.us”:
             author_full = message.get("author", "")
             from_number = author_full.split("@")[0] if "@" in author_full else author_full
-            msg_type    = "chat"  # treat this as a text/chat message
+            msg_type    = "chat"
             text_body   = message.get("body", "").strip().lower()
-
         else:
-            # Case B & C: “360dialog” wrapper or original Graph format have “from” and “type”
+            # Cases B & C: both “360dialog” wrapper and original Graph format use 
+            # “from” + “type” + “text” fields
             from_number = message.get("from")
             msg_type    = message.get("type")
             text_body   = ""
             if msg_type == "text":
                 text_body = message.get("text", {}).get("body", "").strip().lower()
-            elif msg_type in ("interactive", "button_reply", "list_reply"):
-                # For interactive messages we’ll handle payloads below
-                pass
 
+        # If anything is missing, bail
         if not from_number or not msg_type:
-            # Something unexpected in the message object
             return make_response("Invalid message format", 200)
 
-        # ─── Route by message type ────────────────────────────────────────────────
-        # We unify both “chat” (WhatsApp Web) and “text” (360dialog/Graph) to a text flow
+        # ─── ROUTING BY MESSAGE TYPE ────────────────────────────────────────────
+        # We treat both “chat” (WhatsApp Web) and “text” (360dialog/Graph) as text flows.
         if msg_type in ("text", "chat"):
-            # If user sends “reset”, clear all states and send a text‐based main menu prompt
+            # (1) If the user typed “reset”, clear all states and show MAIN MENU
             if text_body == "reset":
-                clear_user_state("car", from_number)
+                clear_user_state("car",    from_number)
                 clear_user_state("bedbug", from_number)
-                clear_user_state("mold", from_number)
+                clear_user_state("mold",   from_number)
 
-                # Send a plain‐text prompt for the main menu
-                send_text_message(
+                # CALL THE EXACT send_main_menu() YOU ALREADY HAVE IN car_fumigation.py
+                # That template is “main_menu_v2” with greeting_name = "there" by default. 
+                car_fumigation.send_main_menu(
                     to=from_number,
-                    body=(
-                        "Your session has been reset. How can I help you today?\n"
-                        "• Type ‘Need help on Pest!’\n"
-                        "• Type ‘Need help on Mold!’\n"
-                        "• Type ‘Need help on Car!’"
-                    ),
+                    phone_number_id=PHONE_NUMBER_ID
                 )
-                return make_response("User session reset and prompt sent", 200)
+                return make_response("Reset → main menu sent", 200)
 
-            # If user types “need help on car” (case‐insensitive), start Car flow
+            # (2) If user typed “Need help on Car!”, start Car flow
             if "need help on car" in text_body:
                 clear_user_state("bedbug", from_number)
-                clear_user_state("mold", from_number)
+                clear_user_state("mold",   from_number)
                 send_template_message(
                     to=from_number,
                     template_name="car_fum_menu",
@@ -190,10 +128,10 @@ def receive_message():
                 )
                 return make_response("Car fumigation menu sent", 200)
 
-            # If user types “need help on pest”, start Bedbug flow
+            # (3) If user typed “Need help on Pest!”, start Bedbug flow
             if "need help on pest" in text_body:
-                clear_user_state("car", from_number)
-                clear_user_state("mold", from_number)
+                clear_user_state("car",   from_number)
+                clear_user_state("mold",  from_number)
                 send_template_message(
                     to=from_number,
                     template_name="Bedbug_Main_Menu",
@@ -201,9 +139,9 @@ def receive_message():
                 )
                 return make_response("Bedbug menu sent", 200)
 
-            # If user types “need help on mold”, start Mold flow
+            # (4) If user typed “Need help on Mold!”, start Mold flow
             if "need help on mold" in text_body:
-                clear_user_state("car", from_number)
+                clear_user_state("car",    from_number)
                 clear_user_state("bedbug", from_number)
                 send_template_message(
                     to=from_number,
@@ -212,10 +150,10 @@ def receive_message():
                 )
                 return make_response("Mold menu sent", 200)
 
-            # Otherwise, delegate to whichever flow has an active state
-            car_state    = get_user_state("car", from_number)
+            # (5) Otherwise, delegate into whichever flow has an active state
+            car_state    = get_user_state("car",    from_number)
             bedbug_state = get_user_state("bedbug", from_number)
-            mold_state   = get_user_state("mold", from_number)
+            mold_state   = get_user_state("mold",   from_number)
 
             if car_state:
                 return car_fumigation.handle_car_fumigation_flow(from_number, message, car_state)
@@ -224,32 +162,32 @@ def receive_message():
             elif mold_state:
                 return mold.handle(from_number, message, mold_state)
             else:
-                # No active flow: send a generic unrecognized‐text template
+                # No active flow: send a generic “I didn’t understand” template
                 send_template_message(
                     to=from_number,
                     template_name="Fallback_Unrecognized",
                     template_params=[
                         (
                             "Sorry, I didn’t understand that. "
-                            "You can type ‘reset’ to return to the main menu."
+                            "You can type ‘reset’ to see the main menu again."
                         )
                     ]
                 )
                 return make_response("Unsupported text fallback sent", 200)
 
+        # ─── Handle interactive messages (buttons / list replies) ─────────────────────
         elif msg_type == "interactive":
-            # For interactive replies (buttons, list selections), extract user response
             interactive = message.get("interactive", {})
             i_type      = interactive.get("type")
 
-            # BUTTON_REPLY
+            # BUTTON_REPLY (user tapped a quick‐reply button)
             if i_type == "button_reply":
-                button_id   = interactive["button_reply"].get("id")
+                button_id   = interactive["button_reply"].get("id", "")
                 button_text = interactive["button_reply"].get("title", "").strip().lower()
 
-                car_state    = get_user_state("car", from_number)
+                car_state    = get_user_state("car",    from_number)
                 bedbug_state = get_user_state("bedbug", from_number)
-                mold_state   = get_user_state("mold", from_number)
+                mold_state   = get_user_state("mold",   from_number)
 
                 if car_state:
                     return car_fumigation.handle_car_fumigation_flow(from_number, message, car_state)
@@ -258,23 +196,21 @@ def receive_message():
                 elif mold_state:
                     return mold.handle(from_number, message, mold_state)
                 else:
-                    # No active flow: send a text fallback to guide the user
-                    send_text_message(
+                    # No active flow: show the main menu again
+                    car_fumigation.send_main_menu(
                         to=from_number,
-                        body=(
-                            "No active flow. You can type ‘reset’ to return to the main menu."
-                        )
+                        phone_number_id=PHONE_NUMBER_ID
                     )
-                    return make_response("No active flow, fallback sent", 200)
+                    return make_response("No active flow → main menu re-sent", 200)
 
-            # LIST_REPLY
+            # LIST_REPLY (user selected from an interactive list)
             elif i_type == "list_reply":
-                list_id    = interactive["list_reply"].get("id")
+                list_id    = interactive["list_reply"].get("id", "")
                 list_text  = interactive["list_reply"].get("title", "").strip().lower()
 
-                car_state    = get_user_state("car", from_number)
+                car_state    = get_user_state("car",    from_number)
                 bedbug_state = get_user_state("bedbug", from_number)
-                mold_state   = get_user_state("mold", from_number)
+                mold_state   = get_user_state("mold",   from_number)
 
                 if car_state:
                     return car_fumigation.handle_car_fumigation_flow(from_number, message, car_state)
@@ -283,14 +219,12 @@ def receive_message():
                 elif mold_state:
                     return mold.handle(from_number, message, mold_state)
                 else:
-                    # No active flow: send a text fallback to guide the user
-                    send_text_message(
+                    # No active flow: re-send the main menu
+                    car_fumigation.send_main_menu(
                         to=from_number,
-                        body=(
-                            "No active flow. You can type ‘reset’ to return to the main menu."
-                        )
+                        phone_number_id=PHONE_NUMBER_ID
                     )
-                    return make_response("No active flow, fallback sent", 200)
+                    return make_response("No active flow → main menu re-sent", 200)
 
             else:
                 # Unhandled interactive type
@@ -298,20 +232,20 @@ def receive_message():
                     to=from_number,
                     body=(
                         "Sorry, I didn’t understand your selection. "
-                        "Please try again or type ‘reset’ to return to the main menu."
+                        "Type ‘reset’ to return to the main menu."
                     )
                 )
                 return make_response("Unhandled interactive type", 200)
 
+        # ─── Fallback for any other message type (image, audio, etc.) ───────────────────
         else:
-            # Any other message type (image, video, audio, stickers, etc.)
             send_template_message(
                 to=from_number,
                 template_name="Fallback_Unhandled_Type",
                 template_params=[
                     (
-                        "Sorry, I can’t handle that type of message. "
-                        "You can type ‘reset’ to return to the main menu."
+                        "Sorry, I can’t handle that type of message right now. "
+                        "Type ‘reset’ to return to the main menu."
                     )
                 ]
             )

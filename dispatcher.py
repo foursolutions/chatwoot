@@ -34,58 +34,55 @@ def receive_message():
 
     # ─────── Handle incoming message (POST) ───────────────────────────────────
     payload = request.get_json()
+
+    # ─────── Immediate debug: log the entire incoming JSON so we can inspect it ─────
     try:
-        # ─── Check if this is a 1msg-wrapped payload ───────────────────────────
-        #
-        # When 1msg sits in front of 360dialog, inbound JSON looks like:
-        # {
-        #   "data": {
-        #     "payload": {
-        #       "360dialog": {
-        #         "messages": [
-        #           {
-        #             "from": "659XXXXXXXX",
-        #             "type": "text",
-        #             "text": { "body": "hello bot" }
-        #           }
-        #         ]
-        #       }
-        #     }
-        #   }
-        # }
-        #
-        # So if payload["data"]["payload"]["360dialog"]["messages"] exists, unwrap it now.
-        if (
-            isinstance(payload, dict)
-            and payload.get("data")
-            and isinstance(payload["data"], dict)
-            and payload["data"].get("payload")
-            and isinstance(payload["data"]["payload"], dict)
-            and payload["data"]["payload"].get("360dialog")
-        ):
-            # This is a 1msg-forwarded object. Grab the real 'messages' array:
-            raw360   = payload["data"]["payload"]["360dialog"]
-            messages = raw360.get("messages", [])
+        print(">>>> RAW INCOMING JSON:", json.dumps(payload))
+    except Exception:
+        # In case payload is not JSON‐serializable, still convert to string
+        print(">>>> RAW INCOMING PAYLOAD (non‐JSON‐serializable):", str(payload))
 
-        else:
-            # Fallback to the original "entry → changes → value → messages" logic
-            entry    = payload.get("entry", [])[0]
-            changes  = entry.get("changes", [])[0]
-            value    = changes.get("value", {})
-            messages = value.get("messages", [])
+    try:
+        # ─── Attempt to unwrap a 1msg‐wrapped payload ──────────────────────────────
+        # We do this in a defensive way that won’t crash if any key is missing.
+        messages = None
 
-        # ─── If there are no messages to process, return 200 ────────────────────
+        # Check for the 1msg wrapper: payload["data"]["payload"]["360dialog"]["messages"]
+        data_section = payload.get("data") if isinstance(payload, dict) else None
+        if isinstance(data_section, dict):
+            inner_payload = data_section.get("payload")
+            if isinstance(inner_payload, dict):
+                wrapped360 = inner_payload.get("360dialog")
+                if isinstance(wrapped360, dict):
+                    messages = wrapped360.get("messages", [])
+
+        # If messages is still None or empty, fall back to the old Facebook Graph format:
         if not messages:
+            entry_list = payload.get("entry")
+            if isinstance(entry_list, list) and len(entry_list) > 0:
+                first_entry = entry_list[0]
+                changes_list = first_entry.get("changes")
+                if isinstance(changes_list, list) and len(changes_list) > 0:
+                    first_change = changes_list[0]
+                    value_section = first_change.get("value", {})
+                    messages = value_section.get("messages", [])
+
+        # If we still have no messages array, return early
+        if not isinstance(messages, list) or len(messages) == 0:
             return make_response("No messages to process", 200)
 
-        # Now 'messages' is either from 1msg or from direct Graph-API style
+        # Now messages is guaranteed to be a non-empty list
         message     = messages[0]
-        from_number = message["from"]
+        from_number = message.get("from")
         msg_type    = message.get("type")
 
-        # ─── Route by message type ──────────────────────────────────────────────
+        if not from_number or not msg_type:
+            # Something unexpected in the message object
+            return make_response("Invalid message format", 200)
+
+        # ─── Route by message type ────────────────────────────────────────────────
         if msg_type == "text":
-            text_body = message["text"]["body"].strip().lower()
+            text_body = message.get("text", {}).get("body", "").strip().lower()
 
             # If user sends "reset", clear any stored state
             if text_body == "reset":
@@ -94,9 +91,11 @@ def receive_message():
                 clear_user_state("mold", from_number)
                 send_text_message(
                     to=from_number,
-                    body="Your session has been reset. How can I help you today? "
-                         "Please type 'Need help on Pest!', 'Need help on Mold!', "
-                         "or 'Need help on Car!'",
+                    body=(
+                        "Your session has been reset. How can I help you today? "
+                        "Please type 'Need help on Pest!', 'Need help on Mold!', "
+                        "or 'Need help on Car!'"
+                    ),
                 )
                 return make_response("User session reset", 200)
 
@@ -150,8 +149,10 @@ def receive_message():
                     to=from_number,
                     template_name="Fallback_Unrecognized",
                     template_params=[
-                        "Sorry, I can’t handle that type of message. "
-                        "Please tap 'Need help on Pest!' or 'Need help on Mold!' or type 'reset'."
+                        (
+                            "Sorry, I can’t handle that type of message. "
+                            "Please tap 'Need help on Pest!' or 'Need help on Mold!' or type 'reset'."
+                        )
                     ]
                 )
                 return make_response("Unsupported text fallback sent", 200)
@@ -161,12 +162,11 @@ def receive_message():
             interactive = message.get("interactive", {})
             i_type      = interactive.get("type")
 
-            # Quick reply or button
+            # Button reply
             if i_type == "button_reply":
-                button_id   = interactive["button_reply"]["id"]
-                button_text = interactive["button_reply"]["title"].strip().lower()
+                button_id   = interactive["button_reply"].get("id")
+                button_text = interactive["button_reply"].get("title", "").strip().lower()
 
-                # Delegate based on active state
                 car_state    = get_user_state("car", from_number)
                 bedbug_state = get_user_state("bedbug", from_number)
                 mold_state   = get_user_state("mold", from_number)
@@ -178,7 +178,6 @@ def receive_message():
                 elif mold_state:
                     return mold.handle(from_number, message, mold_state)
                 else:
-                    # No active state: show the main menu again
                     send_template_message(
                         to=from_number,
                         template_name="Main_Menu",
@@ -188,10 +187,9 @@ def receive_message():
 
             # List reply
             elif i_type == "list_reply":
-                list_id    = interactive["list_reply"]["id"]
-                list_text  = interactive["list_reply"]["title"].strip().lower()
+                list_id   = interactive["list_reply"].get("id")
+                list_text = interactive["list_reply"].get("title", "").strip().lower()
 
-                # Delegate based on active state
                 car_state    = get_user_state("car", from_number)
                 bedbug_state = get_user_state("bedbug", from_number)
                 mold_state   = get_user_state("mold", from_number)
@@ -203,7 +201,6 @@ def receive_message():
                 elif mold_state:
                     return mold.handle(from_number, message, mold_state)
                 else:
-                    # No active state: show the main menu again
                     send_template_message(
                         to=from_number,
                         template_name="Main_Menu",
@@ -215,7 +212,10 @@ def receive_message():
                 # Unhandled interactive type
                 send_text_message(
                     to=from_number,
-                    body="Sorry, I didn’t understand your selection. Please try again or type 'reset' to start over."
+                    body=(
+                        "Sorry, I didn’t understand your selection. Please try again "
+                        "or type 'reset' to start over."
+                    )
                 )
                 return make_response("Unhandled interactive type", 200)
 
@@ -225,8 +225,10 @@ def receive_message():
                 to=from_number,
                 template_name="Fallback_Unhandled_Type",
                 template_params=[
-                    "Sorry, I can’t handle that type of message. "
-                    "Please tap 'Need help on Pest!' or 'Need help on Mold!' or type 'reset'."
+                    (
+                        "Sorry, I can’t handle that type of message. "
+                        "Please tap 'Need help on Pest!' or 'Need help on Mold!' or type 'reset'."
+                    )
                 ]
             )
             return make_response("Unsupported message type fallback sent", 200)

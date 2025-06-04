@@ -14,282 +14,222 @@ from helpers import (
 )
 
 from flows import car_fumigation
+from flows import bedbug
 from flows import mold
-from flows import bedbug  # Import the new bedbug flow
 
 app = Flask(__name__)
 
-VERIFY_TOKEN    = os.getenv("VERIFY_TOKEN")
-PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
+@app.route("/webhook", methods=["GET", "POST"])
+def receive_message():
+    # ─────── Handle verification (GET) ────────────────────────────────────────
+    if request.method == "GET":
+        verify_token = os.getenv("VERIFY_TOKEN")
+        mode         = request.args.get("hub.mode")
+        token        = request.args.get("hub.verify_token")
+        challenge    = request.args.get("hub.challenge")
 
-REDIS_PREFIX_CAR  = "carfum"
-REDIS_PREFIX_MOLD = "mold"
-REDIS_PREFIX_BED  = "bedbug"
-
-ECHO_TEMPLATE = "echo_message_text"
-
-
-@app.route("/webhook", methods=["GET"])
-def verify_webhook():
-    mode      = request.args.get("hub.mode")
-    token     = request.args.get("hub.verify_token")
-    challenge = request.args.get("hub.challenge")
-    if mode == "subscribe" and token == VERIFY_TOKEN:
-        return make_response(challenge, 200)
-    else:
+        if mode == "subscribe" and token == verify_token:
+            return make_response(challenge, 200)
         return make_response("Verification token mismatch", 403)
 
-
-@app.route("/webhook", methods=["POST"])
-def receive_message():
+    # ─────── Handle incoming message (POST) ───────────────────────────────────
     payload = request.get_json()
     try:
-        entry    = payload.get("entry", [])[0]
-        changes  = entry.get("changes", [])[0]
-        value    = changes.get("value", {})
-        messages = value.get("messages", [])
+        # ─── Check if this is a 1msg-wrapped payload ───────────────────────────
+        #
+        # When 1msg sits in front of 360dialog, inbound JSON looks like:
+        # {
+        #   "data": {
+        #     "payload": {
+        #       "360dialog": {
+        #         "messages": [
+        #           {
+        #             "from": "659XXXXXXXX",
+        #             "type": "text",
+        #             "text": { "body": "hello bot" }
+        #           }
+        #         ]
+        #       }
+        #     }
+        #   }
+        # }
+        #
+        # So if payload["data"]["payload"]["360dialog"]["messages"] exists, unwrap it now.
+        if (
+            isinstance(payload, dict)
+            and payload.get("data")
+            and isinstance(payload["data"], dict)
+            and payload["data"].get("payload")
+            and isinstance(payload["data"]["payload"], dict)
+            and payload["data"]["payload"].get("360dialog")
+        ):
+            # This is a 1msg-forwarded object. Grab the real 'messages' array:
+            raw360   = payload["data"]["payload"]["360dialog"]
+            messages = raw360.get("messages", [])
 
+        else:
+            # Fallback to the original "entry → changes → value → messages" logic
+            entry    = payload.get("entry", [])[0]
+            changes  = entry.get("changes", [])[0]
+            value    = changes.get("value", {})
+            messages = value.get("messages", [])
+
+        # ─── If there are no messages to process, return 200 ────────────────────
         if not messages:
             return make_response("No messages to process", 200)
 
+        # Now 'messages' is either from 1msg or from direct Graph-API style
         message     = messages[0]
         from_number = message["from"]
         msg_type    = message.get("type")
 
-        # ─── 1) Plain TEXT messages ─────────────────────────────────────────────
+        # ─── Route by message type ──────────────────────────────────────────────
         if msg_type == "text":
             text_body = message["text"]["body"].strip().lower()
-            print(f"[DEBUG] Received TEXT from {from_number}: '{text_body}'")
 
+            # If user sends "reset", clear any stored state
             if text_body == "reset":
-                print(f"[DEBUG] 'reset' detected for {from_number}. Clearing all states and sending main menu.")
-                clear_user_state(REDIS_PREFIX_CAR,  from_number)
-                clear_user_state(REDIS_PREFIX_MOLD, from_number)
-                clear_user_state(REDIS_PREFIX_BED,  from_number)
-
-                car_fumigation.send_main_menu(
-                    to=from_number,
-                    phone_number_id=PHONE_NUMBER_ID
-                )
-                return make_response("Reset: Main menu sent", 200)
-
-            if text_body == "need help on mold!":
-                print(f"[DEBUG] 'need help on mold!' detected for {from_number}. Starting mold flow.")
-                clear_user_state(REDIS_PREFIX_MOLD, from_number)
-                new_state = {"step": "mold_option", "affected_areas": []}
-                set_user_state(REDIS_PREFIX_MOLD, from_number, new_state)
-
-                mold.send_mold_option_prompt(
-                    to=from_number,
-                    phone_number_id=PHONE_NUMBER_ID
-                )
-                return make_response("Mold flow started", 200)
-
-            if text_body in ["need help on pest!", "need help on pest"]:
-                print(f"[DEBUG] 'need help on pest!' detected for {from_number}. Starting pest flow.")
-                clear_user_state(REDIS_PREFIX_CAR, from_number)
-                clear_user_state(REDIS_PREFIX_BED, from_number)
-
-                new_state = {"step": "choose_service"}
-                set_user_state(REDIS_PREFIX_CAR, from_number, new_state)
-
-                car_fumigation.send_pest_control_list(
-                    to=from_number,
-                    phone_number_id=PHONE_NUMBER_ID
-                )
-                return make_response("Pest flow started", 200)
-
-            # Delegate to whichever flow is active ...
-            state_mold = get_user_state(REDIS_PREFIX_MOLD, from_number)
-            if state_mold:
-                print(f"[DEBUG] Delegating TEXT to handle_mold_flow for {from_number}, step={state_mold.get('step')}")
-                mold.handle_mold_flow(
-                    from_number=from_number,
-                    message=message,
-                    user_state=state_mold
-                )
-                return make_response("Mold flow TEXT handled", 200)
-
-            state_bed = get_user_state(REDIS_PREFIX_BED, from_number)
-            if state_bed:
-                print(f"[DEBUG] Delegating TEXT to handle_bedbug_flow for {from_number}, step={state_bed.get('step')}")
-                bedbug.handle_bedbug_flow(
-                    from_number=from_number,
-                    message=message,
-                    user_state=state_bed
-                )
-                return make_response("Bedbug flow TEXT handled", 200)
-
-            state_car = get_user_state(REDIS_PREFIX_CAR, from_number)
-            if state_car:
-                print(f"[DEBUG] Delegating TEXT to handle_car_fumigation_flow for {from_number}, step={state_car.get('step')}")
-                car_fumigation.handle_car_fumigation_flow(
-                    from_number=from_number,
-                    message=message,
-                    user_state=state_car
-                )
-                return make_response("Car flow TEXT handled", 200)
-
-            send_text_message(
-                to=from_number,
-                body="Please tap 'Need help on Pest!' or 'Need help on Mold!' to begin."
-            )
-            return make_response("No active flow & TEXT fallback sent", 200)
-
-        # ─── 2) BUTTONS / QUICK‐REPLY payloads ────────────────────────────────────
-        if msg_type in ["button", "interactive"]:
-            def extract_button_payload(msg: dict) -> str:
-                if msg.get("type") == "button":
-                    return msg["button"]["payload"]
-                if (msg.get("type") == "interactive"
-                        and msg["interactive"].get("type") == "button_reply"):
-                    return msg["interactive"]["button_reply"]["id"]
-                return ""
-
-            payload = extract_button_payload(message)
-            if payload:
-                payload_lower = payload.lower()
-                print(f"[DEBUG] handle BUTTON/BR payload='{payload_lower}' from {from_number}")
-
-                # Start Mold flow from main menu
-                if payload_lower == "need help on mold!":
-                    clear_user_state(REDIS_PREFIX_MOLD, from_number)
-                    new_state = {"step": "mold_option", "affected_areas": []}
-                    set_user_state(REDIS_PREFIX_MOLD, from_number, new_state)
-
-                    mold.send_mold_option_prompt(
-                        to=from_number,
-                        phone_number_id=PHONE_NUMBER_ID
-                    )
-                    return make_response("Mold flow started via BUTTON", 200)
-
-                # Start Pest flow from main menu
-                if payload_lower == "need help on pest!":
-                    clear_user_state(REDIS_PREFIX_CAR, from_number)
-                    clear_user_state(REDIS_PREFIX_BED, from_number)
-
-                    new_state = {"step": "choose_service"}
-                    set_user_state(REDIS_PREFIX_CAR, from_number, new_state)
-
-                    car_fumigation.send_pest_control_list(
-                        to=from_number,
-                        phone_number_id=PHONE_NUMBER_ID
-                    )
-                    return make_response("Pest flow started via BUTTON", 200)
-
-                # Delegate to Mold flow if active
-                state_mold = get_user_state(REDIS_PREFIX_MOLD, from_number)
-                if state_mold:
-                    print(f"[DEBUG] Delegating BUTTON/BR to handle_mold_flow for {from_number}, step={state_mold.get('step')}")
-                    mold.handle_mold_flow(
-                        from_number=from_number,
-                        message=message,
-                        user_state=state_mold
-                    )
-                    return make_response("Mold flow BUTTON handled", 200)
-
-                # Delegate to Bedbug flow if active
-                state_bed = get_user_state(REDIS_PREFIX_BED, from_number)
-                if state_bed:
-                    print(f"[DEBUG] Delegating BUTTON/BR to handle_bedbug_flow for {from_number}, step={state_bed.get('step')}")
-                    bedbug.handle_bedbug_flow(
-                        from_number=from_number,
-                        message=message,
-                        user_state=state_bed
-                    )
-                    return make_response("Bedbug flow BUTTON handled", 200)
-
-                # Delegate to Car Fumigation flow if active
-                state_car = get_user_state(REDIS_PREFIX_CAR, from_number)
-                if state_car:
-                    print(f"[DEBUG] Delegating BUTTON/BR to handle_car_fumigation_flow for {from_number}, step={state_car.get('step')}")
-                    car_fumigation.handle_car_fumigation_flow(
-                        from_number=from_number,
-                        message=message,
-                        user_state=state_car
-                    )
-                    return make_response("Car flow BUTTON handled", 200)
-
-                # No active flow but a button was pressed
+                clear_user_state("car", from_number)
+                clear_user_state("bedbug", from_number)
+                clear_user_state("mold", from_number)
                 send_text_message(
                     to=from_number,
-                    body="Please tap 'Need help on Pest!' or 'Need help on Mold!' to begin."
+                    body="Your session has been reset. How can I help you today? "
+                         "Please type 'Need help on Pest!', 'Need help on Mold!', "
+                         "or 'Need help on Car!'",
                 )
-                return make_response("No active flow for BUTTON, fallback sent", 200)
+                return make_response("User session reset", 200)
 
-        # ─── 3) LIST‐REPLY (“interactive.list_reply”) payloads ─────────────────────
-        if msg_type == "interactive" and message["interactive"].get("type") == "list_reply":
-            selected_id = message["interactive"]["list_reply"]["id"]
-            print(f"[DEBUG] Received LIST reply '{selected_id}' from {from_number}")
-
-            # 1) FIRST check if we are already in the Bedbug flow
-            state_bed = get_user_state(REDIS_PREFIX_BED, from_number)
-            if state_bed:
-                print(f"[DEBUG] Delegating LIST to handle_bedbug_flow for {from_number}, step={state_bed.get('step')}")
-                bedbug.handle_bedbug_flow(
-                    from_number=from_number,
-                    message=message,
-                    user_state=state_bed
+            # If user types "Need help on Car!", start the car fumigation flow
+            if "need help on car" in text_body:
+                clear_user_state("bedbug", from_number)
+                clear_user_state("mold", from_number)
+                send_template_message(
+                    to=from_number,
+                    template_name="Car_Main_Menu",
+                    template_params=[]
                 )
-                return make_response("Bedbug flow LIST handled", 200)
+                return make_response("Car fumigation menu sent", 200)
 
-            # 2) NEXT check if we are in the Car flow—but BEFORE delegating to Car we see if we are
-            #    still on the “choose_service” step and user tapped “bedbugs”. If so, jump into Bedbug flow:
-            state_car = get_user_state(REDIS_PREFIX_CAR, from_number)
-            if state_car:
-                # If we’re at the “choose_service” step and user selected “bedbugs”, switch to Bedbug flow
-                if state_car.get("step") == "choose_service" and selected_id == "bedbugs":
-                    print(f"[DEBUG] User chose bedbugs under pest services. Clearing Car flow and starting Bedbug flow.")
-                    clear_user_state(REDIS_PREFIX_CAR, from_number)
+            # If user types "Need help on Pest!" start the pest flow (bedbug)
+            if "need help on pest" in text_body:
+                clear_user_state("car", from_number)
+                clear_user_state("mold", from_number)
+                send_template_message(
+                    to=from_number,
+                    template_name="Bedbug_Main_Menu",
+                    template_params=[]
+                )
+                return make_response("Bedbug menu sent", 200)
 
-                    # Initialize Bedbug state and send the first bedbug prompt
-                    new_state = {"step": "bedbug_option", "affected_areas": []}
-                    set_user_state(REDIS_PREFIX_BED, from_number, new_state)
+            # If user types "Need help on Mold!" start the mold flow
+            if "need help on mold" in text_body:
+                clear_user_state("car", from_number)
+                clear_user_state("bedbug", from_number)
+                send_template_message(
+                    to=from_number,
+                    template_name="Mold_Main_Menu",
+                    template_params=[]
+                )
+                return make_response("Mold menu sent", 200)
 
-                    bedbug.send_bedbug_option_prompt(
+            # Otherwise delegate to whichever flow has an active state
+            car_state    = get_user_state("car", from_number)
+            bedbug_state = get_user_state("bedbug", from_number)
+            mold_state   = get_user_state("mold", from_number)
+
+            if car_state:
+                return car_fumigation.handle(from_number, message, car_state)
+            elif bedbug_state:
+                return bedbug.handle(from_number, message, bedbug_state)
+            elif mold_state:
+                return mold.handle(from_number, message, mold_state)
+            else:
+                # No active state, unrecognized text
+                send_template_message(
+                    to=from_number,
+                    template_name="Fallback_Unrecognized",
+                    template_params=[
+                        "Sorry, I can’t handle that type of message. "
+                        "Please tap 'Need help on Pest!' or 'Need help on Mold!' or type 'reset'."
+                    ]
+                )
+                return make_response("Unsupported text fallback sent", 200)
+
+        elif msg_type == "interactive":
+            # For interactive replies (buttons, list selections), extract user response
+            interactive = message.get("interactive", {})
+            i_type      = interactive.get("type")
+
+            # Quick reply or button
+            if i_type == "button_reply":
+                button_id   = interactive["button_reply"]["id"]
+                button_text = interactive["button_reply"]["title"].strip().lower()
+
+                # Delegate based on active state
+                car_state    = get_user_state("car", from_number)
+                bedbug_state = get_user_state("bedbug", from_number)
+                mold_state   = get_user_state("mold", from_number)
+
+                if car_state:
+                    return car_fumigation.handle(from_number, message, car_state)
+                elif bedbug_state:
+                    return bedbug.handle(from_number, message, bedbug_state)
+                elif mold_state:
+                    return mold.handle(from_number, message, mold_state)
+                else:
+                    # No active state: show the main menu again
+                    send_template_message(
                         to=from_number,
-                        phone_number_id=PHONE_NUMBER_ID
+                        template_name="Main_Menu",
+                        template_params=[]
                     )
-                    return make_response("Started Bedbug flow via LIST choice", 200)
+                    return make_response("No active flow, main menu re-sent", 200)
 
-                # Otherwise, delegate to Car Fumigation flow
-                print(f"[DEBUG] Delegating LIST to handle_car_fumigation_flow for {from_number}, step={state_car.get('step')}")
-                car_fumigation.handle_car_fumigation_flow(
-                    from_number=from_number,
-                    message=message,
-                    user_state=state_car
+            # List reply
+            elif i_type == "list_reply":
+                list_id    = interactive["list_reply"]["id"]
+                list_text  = interactive["list_reply"]["title"].strip().lower()
+
+                # Delegate based on active state
+                car_state    = get_user_state("car", from_number)
+                bedbug_state = get_user_state("bedbug", from_number)
+                mold_state   = get_user_state("mold", from_number)
+
+                if car_state:
+                    return car_fumigation.handle(from_number, message, car_state)
+                elif bedbug_state:
+                    return bedbug.handle(from_number, message, bedbug_state)
+                elif mold_state:
+                    return mold.handle(from_number, message, mold_state)
+                else:
+                    # No active state: show the main menu again
+                    send_template_message(
+                        to=from_number,
+                        template_name="Main_Menu",
+                        template_params=[]
+                    )
+                    return make_response("No active flow, main menu re-sent", 200)
+
+            else:
+                # Unhandled interactive type
+                send_text_message(
+                    to=from_number,
+                    body="Sorry, I didn’t understand your selection. Please try again or type 'reset' to start over."
                 )
-                return make_response("Car flow LIST handled", 200)
+                return make_response("Unhandled interactive type", 200)
 
-            # 3) NEXT check if we are in the Mold flow
-            state_mold = get_user_state(REDIS_PREFIX_MOLD, from_number)
-            if state_mold:
-                print(f"[DEBUG] Delegating LIST to handle_mold_flow for {from_number}, step={state_mold.get('step')}")
-                mold.handle_mold_flow(
-                    from_number=from_number,
-                    message=message,
-                    user_state=state_mold
-                )
-                return make_response("Mold flow LIST handled", 200)
-
-            # 4) If no flow is active, fallback
-            send_text_message(
+        else:
+            # Any other message type (e.g., image, video, stickers, etc.)
+            send_template_message(
                 to=from_number,
-                body="Please tap 'Need help on Pest!' or 'Need help on Mold!' to begin."
+                template_name="Fallback_Unhandled_Type",
+                template_params=[
+                    "Sorry, I can’t handle that type of message. "
+                    "Please tap 'Need help on Pest!' or 'Need help on Mold!' or type 'reset'."
+                ]
             )
-            return make_response("No flow active for LIST, fallback sent", 200)
-
-        # ─── 4) Fallback for anything else ────────────────────────────────────
-        print(f"[DEBUG] Received unsupported msg_type='{msg_type}' from {from_number}. Sending fallback.")
-        send_template_message(
-            to=from_number,
-            template_name=ECHO_TEMPLATE,
-            template_params=[
-                "Sorry, I can’t handle that type of message. "
-                "Please tap 'Need help on Pest!' or 'Need help on Mold!' or type 'reset'."
-            ]
-        )
-        return make_response("Unsupported message type fallback sent", 200)
+            return make_response("Unsupported message type fallback sent", 200)
 
     except Exception as e:
         print(f"Error in receive_message: {e}")

@@ -61,7 +61,7 @@ def receive_message():
         #       "senderName": "Four Solutions",
         #       "caption": null,
         #       "quotedMsgId": null,
-        #       "chatName": "6587788080"
+        #       "chatName": "6587788080@c.us"
         #     }
         #   ],
         #   "instanceId": "VAN388218473"
@@ -161,20 +161,17 @@ def receive_message():
         # ─── Route by message type ────────────────────────────────────────────────
         # We unify both “chat” (WhatsApp Web) and “text” (360dialog/Graph) to a text flow
         if msg_type in ("text", "chat"):
-            # If user sends “reset”, clear all states
+            # If user sends “reset”, clear all states and show main menu
             if text_body == "reset":
                 clear_user_state("car", from_number)
                 clear_user_state("bedbug", from_number)
                 clear_user_state("mold", from_number)
-                send_text_message(
+                send_template_message(
                     to=from_number,
-                    body=(
-                        "Your session has been reset. How can I help you today? "
-                        "Please type 'Need help on Pest!', 'Need help on Mold!', "
-                        "or 'Need help on Car!'"
-                    ),
+                    template_name="Main_Menu",
+                    template_params=[]
                 )
-                return make_response("User session reset", 200)
+                return make_response("User session reset and main menu sent", 200)
 
             # If user types “Need help on Car!”, start the car fumigation flow
             if "need help on car" in text_body:
@@ -318,4 +315,3 @@ def receive_message():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-

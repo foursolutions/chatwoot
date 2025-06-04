@@ -37,20 +37,20 @@ def receive_message():
     # ─────── Handle incoming message (POST) ───────────────────────────────────
     payload = request.get_json()
 
-    # ─────── Debug: log the raw JSON so we can see exactly what 1msg forwarded ─────
+    # ─────── Debug: log the raw JSON so we see exactly how 1msg wrapped it ─────
     try:
         print(">>>> RAW INCOMING JSON:", json.dumps(payload))
     except Exception:
-        print(">>>> RAW INCOMING PAYLOAD (non‐JSON‐serializable):", str(payload))
+        print(">>>> RAW INCOMING PAYLOAD (non-JSON-serializable):", str(payload))
 
     try:
         messages = None
 
-        # 1) Check for 1msg “WhatsApp Web” wrapper (has top‐level "messages" list)
+        # 1) Check for 1msg “WhatsApp Web” wrapper (has top-level "messages" list)
         if isinstance(payload, dict) and isinstance(payload.get("messages"), list):
             messages = payload["messages"]
 
-        # 2) If not found above, check 1msg’s “360dialog” wrapper format:
+        # 2) Otherwise, check for 1msg’s “360dialog” wrapper:
         #    payload["data"]["payload"]["360dialog"]["messages"]
         if messages is None:
             data_section = payload.get("data")
@@ -61,7 +61,7 @@ def receive_message():
                     if isinstance(wrapped360, dict):
                         messages = wrapped360.get("messages", [])
 
-        # 3) If still no messages, fallback to Facebook Graph style (entry→changes→value→messages)
+        # 3) Otherwise, fallback to Facebook Graph style (entry→changes→value→messages)
         if messages is None or not isinstance(messages, list) or len(messages) == 0:
             entry_list = payload.get("entry")
             if isinstance(entry_list, list) and len(entry_list) > 0:
@@ -72,63 +72,63 @@ def receive_message():
                     value_section = first_change.get("value", {})
                     messages = value_section.get("messages", [])
 
-        # If we still have no messages or it’s empty, return early
+        # If still no “messages” array or it’s empty, do nothing
         if not isinstance(messages, list) or len(messages) == 0:
             return make_response("No messages to process", 200)
 
         # We now have at least one message object
         message = messages[0]
 
-        # ─── Determine from_number, msg_type, and text_body ─────────────────────────────
-        # Case A: 1msg “WhatsApp Web” wrapper uses “author” + “body”, and type might be "chat" or "button"
+        # ─── Extract from_number, msg_type, and text_body ────────────────────────────
+        # Case A: 1msg “WhatsApp Web” wrapper (has “author” + “body” + “type” could be “chat” or “button”)
         if "author" in message and "body" in message:
             author_full = message.get("author", "")
-            # author_full looks like "6587788080@c.us" → strip "@c.us"
+            # “6587788080@c.us” → split off “@c.us”
             from_number = author_full.split("@")[0] if "@" in author_full else author_full
-            msg_type    = message.get("type", "chat")  # e.g. "chat" or "button"
+            msg_type    = message.get("type", "chat")  # “chat” or “button”
             text_body   = message.get("body", "").strip().lower()
-
         else:
-            # Case B & C: 360dialog wrapper or Graph format use "from" + "type" + "text"
+            # Case B & C: 360dialog wrapper or Facebook Graph format:
+            #   “from” + “type” + “text” fields
             from_number = message.get("from")
             msg_type    = message.get("type")
             text_body   = ""
             if msg_type == "text":
                 text_body = message.get("text", {}).get("body", "").strip().lower()
-            # We handle "interactive" in its own branch below
 
         if not from_number or not msg_type:
             # Unexpected format
             return make_response("Invalid message format", 200)
 
         # ─── ROUTE BY MESSAGE TYPE ────────────────────────────────────────────────
-        # 1msg uses "button" when a user taps a quick‐reply; treat that as text
+        # Treat “button” exactly like a text/chat message so “Need help on Pest!” works
         if msg_type in ("text", "chat", "button"):
-            # If the user typed "reset", clear all states and show the main menu
+            # 1) If user typed “reset” exactly, clear all states and re-send the main menu
             if text_body == "reset":
                 clear_user_state("car",    from_number)
                 clear_user_state("bedbug", from_number)
                 clear_user_state("mold",   from_number)
 
-                # Call the exact same send_main_menu() you had before integration
+                # This calls car_fumigation.send_main_menu() → uses send_template_message(...) →
+                # 1msg /sendTemplate → 360dialog “main_menu_v2”
                 car_fumigation.send_main_menu(
                     to=from_number,
                     phone_number_id=PHONE_NUMBER_ID
                 )
                 return make_response("Reset → main menu sent", 200)
 
-            # If user typed "need help on car", show Car main menu
+            # 2) If user typed “need help on car”, send Car menu
             if "need help on car" in text_body:
                 clear_user_state("bedbug", from_number)
                 clear_user_state("mold",   from_number)
                 send_template_message(
                     to=from_number,
-                    template_name="car_fum_menu",  # your Car menu template
+                    template_name="car_fum_menu",  # your Car main menu template
                     template_params=[]
                 )
                 return make_response("Car fumigation menu sent", 200)
 
-            # If user typed "need help on pest", show Bedbug menu
+            # 3) If user typed “need help on pest”, send Bedbug menu
             if "need help on pest" in text_body:
                 clear_user_state("car",   from_number)
                 clear_user_state("mold",  from_number)
@@ -139,7 +139,7 @@ def receive_message():
                 )
                 return make_response("Bedbug menu sent", 200)
 
-            # If user typed "need help on mold", show Mold menu
+            # 4) If user typed “need help on mold”, send Mold menu
             if "need help on mold" in text_body:
                 clear_user_state("car",    from_number)
                 clear_user_state("bedbug", from_number)
@@ -150,7 +150,7 @@ def receive_message():
                 )
                 return make_response("Mold menu sent", 200)
 
-            # Otherwise, delegate to whichever flow is active
+            # 5) Otherwise, delegate to whichever flow is currently active:
             car_state    = get_user_state("car",    from_number)
             bedbug_state = get_user_state("bedbug", from_number)
             mold_state   = get_user_state("mold",   from_number)
@@ -162,22 +162,22 @@ def receive_message():
             elif mold_state:
                 return mold.handle(from_number, message, mold_state)
             else:
-                # No active conversation: send a generic “I didn't understand” template
+                # No active flow: tell them we didn’t understand
                 send_template_message(
                     to=from_number,
                     template_name="Fallback_Unrecognized",
                     template_params=[
-                        "Sorry, I didn’t understand that. You can type ‘reset’ to go back to the main menu."
+                        "Sorry, I didn’t understand that. You can type ‘reset’ to return to the main menu."
                     ]
                 )
                 return make_response("Unsupported text/button fallback sent", 200)
 
-        # Handle 360dialog‐style “interactive” payloads (buttons & lists)
+        # ─── Handle 360dialog “interactive” messages (buttons & lists) ─────────────────
         elif msg_type == "interactive":
             interactive = message.get("interactive", {})
             i_type      = interactive.get("type")
 
-            # BUTTON_REPLY    
+            # BUTTON_REPLY
             if i_type == "button_reply":
                 button_id   = interactive["button_reply"].get("id", "")
                 button_text = interactive["button_reply"].get("title", "").strip().lower()
@@ -193,12 +193,12 @@ def receive_message():
                 elif mold_state:
                     return mold.handle(from_number, message, mold_state)
                 else:
-                    # No active flow: re‐send the main menu
+                    # No active flow: re-send main menu
                     car_fumigation.send_main_menu(
                         to=from_number,
                         phone_number_id=PHONE_NUMBER_ID
                     )
-                    return make_response("No active flow → main menu re‐sent", 200)
+                    return make_response("No active flow → main menu re-sent", 200)
 
             # LIST_REPLY
             elif i_type == "list_reply":
@@ -216,37 +216,40 @@ def receive_message():
                 elif mold_state:
                     return mold.handle(from_number, message, mold_state)
                 else:
-                    # No active flow: re‐send the main menu
+                    # No active flow: re-send main menu
                     car_fumigation.send_main_menu(
                         to=from_number,
                         phone_number_id=PHONE_NUMBER_ID
                     )
-                    return make_response("No active flow → main menu re‐sent", 200)
+                    return make_response("No active flow → main menu re-sent", 200)
 
             else:
                 # Unhandled interactive type
                 send_text_message(
                     to=from_number,
                     body=(
-                        "Sorry, I didn’t understand your selection. Please try again "
-                        "or type ‘reset’ to return to the main menu."
+                        "Sorry, I didn’t understand your selection. "
+                        "Please try again or type ‘reset’ to return to the main menu."
                     )
                 )
                 return make_response("Unhandled interactive type", 200)
 
-        # Fallback for any other message types (images, audio, etc.)
+        # ─── Fallback for any other message types (images, audio, etc.) ───────────────────
         else:
             send_template_message(
                 to=from_number,
                 template_name="Fallback_Unhandled_Type",
                 template_params=[
-                    "Sorry, I can’t handle that type of message. Type ‘reset’ to go back to the main menu."
+                    (
+                        "Sorry, I can’t handle that type of message right now. "
+                        "Type ‘reset’ to return to the main menu."
+                    )
                 ]
             )
             return make_response("Unsupported message type fallback sent", 200)
 
     except Exception as e:
-        # Catch‐all: log the exception and return 200 so WhatsApp/1msg don’t retry
+        # Catch any exception, log it, and return 200 (to avoid retries)
         print(f"Error in receive_message: {e}")
         return make_response("Error processing message", 200)
 

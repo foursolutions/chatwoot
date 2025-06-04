@@ -2,7 +2,10 @@
 
 from dispatcher import app
 
-if __name__ == "__main__":
-    import os
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+# FastAPI will look for `app` here.
+# No further code is needed, because `dispatcher.app` is a FastAPI() instance.
+
+# If you want a simple “health check” endpoint, you can add it here:
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}

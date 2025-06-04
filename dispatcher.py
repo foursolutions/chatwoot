@@ -4,12 +4,12 @@ import os
 import json
 from fastapi import FastAPI, Request, Response
 from helpers import send_text_message, send_interactive_message, get_user_state, set_user_state, clear_user_state
+# If you have separate modules for each flow, you can import them here:
 # from car_fumigation import handle_car_fumigation
 # from bedbug import handle_bedbug_flow
 # from mold import handle_mold_flow
 
 app = FastAPI()
-
 
 @app.post("/webhook")
 async def receive_message(request: Request):
@@ -19,7 +19,7 @@ async def receive_message(request: Request):
     # ——— Extract the “messages” array from 1msg’s envelope ———
     messages = None
 
-    # 1) Newer 1msg wrapper: payload["messages"]
+    # 1) 1msg may send {"messages": [...], "instanceId": "..."}
     if isinstance(payload, dict) and isinstance(payload.get("messages"), list):
         messages = payload["messages"]
 
@@ -33,7 +33,7 @@ async def receive_message(request: Request):
                 if isinstance(w360, dict):
                     messages = w360.get("messages", [])
 
-    # 3) Facebook‐Graph style (entry→changes→value→messages)
+    # 3) Graph/Webhook style (entry→changes→value→messages)
     if not messages:
         entry_list = payload.get("entry", [])
         if entry_list:
@@ -43,14 +43,14 @@ async def receive_message(request: Request):
                 messages = val.get("messages", [])
 
     if not messages:
-        return Response(status_code=200, content="No messages")
+        return Response(status_code=200, content="No messages to process")
 
     message = messages[0]
 
-    # ——— Extract sender phone and type/body ———
+    # ——— Extract sender phone & type/body ———
     if "author" in message and "body" in message:
         # 1msg “WhatsApp Web” wrapper
-        author_full = message.get("author", "")
+        author_full = message.get("author", "")  # e.g. "6587788080@c.us"
         from_number = author_full.split("@")[0]
         msg_type = "text"
         text_body = message.get("body", "").strip().lower()
@@ -71,7 +71,7 @@ async def receive_message(request: Request):
         return Response(status_code=200, content="Malformed message")
 
     #
-    # ——— 1) USER SAYS “reset” (send interactive button menu) ———
+    # ——— 1) USER SAYS “reset” → send interactive button menu ———
     #
     if msg_type == "text" and text_body == "reset":
         clear_user_state("car", from_number)
@@ -87,7 +87,7 @@ async def receive_message(request: Request):
                     "text": (
                         "Hi there, thanks for reaching out to Four Solutions! "
                         "I'm Solvia, your fun and friendly chatbot.\n"
-                        "How may I help you today? (Tap ‘Live Human’ anytime, "
+                        "How may I help you today? (Tap \"Live Human\" anytime, "
                         "or choose one of the options below.)"
                     )
                 },
@@ -124,7 +124,7 @@ async def receive_message(request: Request):
         except Exception as e:
             print("ERROR sending main menu (interactive):", e)
 
-        return Response(status_code=200, content="Interactive main menu sent")
+        return Response(status_code=200, content="Interactive menu sent")
 
     #
     # ——— 2) USER TAPS ONE OF THOSE BUTTONS (“type”:“button”) ———
@@ -138,7 +138,8 @@ async def receive_message(request: Request):
             clear_user_state("mold", from_number)
 
             set_user_state("bedbug", from_number, {"step": "start"})
-            # bedbug.handle_bedbug_flow(from_number)
+            # Uncomment and replace with your actual bedbug handler:
+            # handle_bedbug_flow(from_number)
             send_text_message(from_number, "Bedbug flow started… (your code here)")
             return Response(status_code=200, content="Bedbug flow triggered")
 
@@ -147,6 +148,7 @@ async def receive_message(request: Request):
             clear_user_state("bedbug", from_number)
 
             set_user_state("mold", from_number, {"step": "start"})
+            # Uncomment and replace with your actual mold handler:
             # handle_mold_flow(from_number)
             send_text_message(from_number, "Mold flow started… (your code here)")
             return Response(status_code=200, content="Mold flow triggered")
@@ -160,10 +162,10 @@ async def receive_message(request: Request):
                 to=from_number,
                 body="Okay, connecting you to a live human agent now!"
             )
-            # (insert your live‐human logic here)
+            # Insert your “handoff to live agent” logic here if desired
             return Response(status_code=200, content="Live human handoff")
 
-        # Unknown button
+        # If button ID isn’t recognized:
         send_text_message(from_number, "Sorry, I didn’t understand that button.")
         return Response(status_code=200, content="Unknown button pressed")
 
@@ -171,13 +173,13 @@ async def receive_message(request: Request):
     # ——— 3) USER TYPES FREE TEXT ———
     #
     if msg_type == "text":
-        # (Example: user might type “need help on pest” instead of tapping the button)
+        # If they typed “need help on pest” manually:
         if "need help on pest" in text_body:
             clear_user_state("car", from_number)
             clear_user_state("mold", from_number)
 
             set_user_state("bedbug", from_number, {"step": "start"})
-            # bedbug.handle_bedbug_flow(from_number)
+            # handle_bedbug_flow(from_number)
             send_text_message(from_number, "Bedbug flow started… (your code here)")
             return Response(status_code=200, content="Bedbug via text")
 
@@ -199,7 +201,7 @@ async def receive_message(request: Request):
             send_text_message(from_number, "Car fumigation flow started… (your code here)")
             return Response(status_code=200, content="Car via text")
 
-        # Otherwise, fallback:
+        # Fallback for any other free text:
         send_text_message(
             to=from_number,
             body="Please tap ‘Need help on Pest!’ or ‘Need help on Mold!’ to begin."

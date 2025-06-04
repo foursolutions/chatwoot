@@ -6,20 +6,27 @@ import json
 import requests
 
 # ============================
-#  Configuration (unchanged)
+#  Configuration & Constants
 # ============================
-# These two must be defined in your Heroku Config Vars:
+# These must be set in your Heroku Config Vars:
 #
-#   1MSG_API_KEY   = TKNgRBqpmnDbRf9NzyO5uXNgKHobiDCe
-#   1MSG_BASE_URL  = https://api.1msg.io/VAN388218473/
+#   1MSG_API_KEY       = (the API key from your 1msg dashboard)
+#   1MSG_BASE_URL      = https://api.1msg.io/VAN388218473
+#   TEMPLATE_NAMESPACE = 94d66366_9ec1_43a3_a84c_46039bd33ef5
+#   REDIS_URL          = (your Redis connection URL)
 #
-# (No longer using WHATSAPP_TOKEN / D360‐API‐KEY)
-API_KEY    = os.getenv("1MSG_API_KEY")
-BASE_URL   = os.getenv("1MSG_BASE_URL", "").rstrip("/")  # e.g. "https://api.1msg.io/VAN388218473"
-REDIS_URL  = os.getenv("REDIS_URL")
+# (You no longer need WHATSAPP_TOKEN or D360 API keys here.)
 
-if not API_KEY or not BASE_URL:
-    raise RuntimeError("Missing 1MSG_API_KEY or 1MSG_BASE_URL in environment variables.")
+API_KEY            = os.getenv("1MSG_API_KEY")
+BASE_URL           = os.getenv("1MSG_BASE_URL", "").rstrip("/")
+TEMPLATE_NAMESPACE = os.getenv("TEMPLATE_NAMESPACE", "").strip()
+REDIS_URL          = os.getenv("REDIS_URL")
+
+if not API_KEY or not BASE_URL or not TEMPLATE_NAMESPACE or not REDIS_URL:
+    raise RuntimeError(
+        "Missing one of the required env vars: "
+        "1MSG_API_KEY, 1MSG_BASE_URL, TEMPLATE_NAMESPACE, or REDIS_URL."
+    )
 
 # Initialize Redis client (unchanged)
 r = redis.StrictRedis.from_url(REDIS_URL, decode_responses=True)
@@ -58,33 +65,38 @@ def _post_to_1msg(payload: dict) -> dict:
         "x-api-key": API_KEY
     }
     resp = requests.post(url, headers=headers, json=payload, timeout=10)
+    # For debugging, you can uncomment the next line to see full 1msg responses:
+    # print("[1MSG SEND] HTTP", resp.status_code, resp.text)
     resp.raise_for_status()
     return resp.json()
 
 
 # ======================================================
-#  send_template_message (via 1msg, forwarding 360dialog)
+#  send_template_message (via 1msg → 360dialog)
 # ======================================================
 def send_template_message(to: str, template_name: str, template_params=None):
     """
-    Sends a WhatsApp template message through 1msg. 1msg will forward to 360dialog.
+    Sends a WhatsApp template message through 1msg, forwarding to 360dialog.
     
-    - to: recipient phone number (e.g. "6591234567")
-    - template_name: exact name of the approved template in 360dialog
-    - template_params: list of strings to fill {{1}}, {{2}}, ... in the template body
+    - to: recipient phone number (string, e.g. "6591234567")
+    - template_name: the short name of your 360dialog template, e.g. "main_menu_v2"
+    - template_params: list of strings to fill {{1}}, {{2}}, etc.
     """
     if template_params is None:
         template_params = []
 
-    # Build “body” parameters exactly as we used to for 360dialog
+    # Build body parameters exactly as 360dialog expects
     body_parameters = [{"type": "text", "text": param} for param in template_params]
+
+    # Prepend namespace so 360dialog recognizes the template:
+    fully_qualified = f"{TEMPLATE_NAMESPACE}:{template_name}"
 
     payload = {
         "to": to,
         "type": "template",
         "template": {
-            "name": template_name,
-            "language": { "code": "en" },
+            "name": fully_qualified,
+            "language": {"code": "en"},
             "components": [
                 {
                     "type": "body",
@@ -99,30 +111,29 @@ def send_template_message(to: str, template_name: str, template_params=None):
 
 
 # ===============================================================
-#  send_interactive_message (via 1msg, forwarding 360dialog “interactive”)
+#  send_interactive_message (via 1msg → 360dialog)
 # ===============================================================
 def send_interactive_message(payload: dict):
     """
-    Sends a “session‐based” interactive message (list or quick‐reply) via 1msg.
-    You must include "messaging_product": "whatsapp" at the top level of payload.
+    Sends a “session‐based” interactive message (buttons or list) via 1msg,
+    which forwards it to 360dialog unchanged. Ensure "messaging_product": "whatsapp" is set.
     """
-    # Ensure “messaging_product” is always set to "whatsapp"
     payload.setdefault("messaging_product", "whatsapp")
     return _post_to_1msg(payload)
 
 
 # ================================================================
-#  send_text_message (via 1msg, forwarding 360dialog “text”)
+#  send_text_message (via 1msg → 360dialog)
 # ================================================================
 def send_text_message(to: str, body: str):
     """
-    Sends a simple text message (non‐template) via 1msg.
-    Must include "messaging_product": "whatsapp" as well.
+    Sends a simple text message (non‐template) via 1msg,
+    which forwards it to 360dialog. Include "messaging_product": "whatsapp".
     """
     payload = {
         "to": to,
         "type": "text",
-        "text": { "body": body },
+        "text": {"body": body},
         "messaging_product": "whatsapp"
     }
     return _post_to_1msg(payload)

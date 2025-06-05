@@ -1,4 +1,5 @@
 # helpers.py
+
 import os
 import json
 import requests
@@ -10,7 +11,7 @@ def send_text_message(payload):
     """
     payload should be a dict like:
       {
-        "to": "6588123456",
+        "to": "6588123456",            # digits only
         "type": "text",
         "text": {"body": "Hello!"},
         "messaging_product": "whatsapp"
@@ -34,12 +35,27 @@ def send_text_message(payload):
 # -------------------------------------------------------------------
 def send_interactive_message(payload):
     """
-    payload should be a dict like:
+    payload should be a dict like one of:
+    (A) Sending a button or list or template:
       {
-        "to": "6588123456",
+        "to": "6588123456",    # digits only
         "type": "interactive",
-        "interactive": { ... },
-        "messaging_product": "whatsapp"
+        "messaging_product": "whatsapp",
+        "interactive": { … }
+      }
+    (B) Sending a WhatsApp‐template via 1msg's /sendTemplate endpoint:
+      {
+        "token":    "<API_KEY>",
+        "namespace": "<NAMESPACE>",
+        "template":  "main_menu_v2",
+        "language":  {"policy": "deterministic", "code": "en"},
+        "params": [
+          {
+            "type": "body",
+            "parameters": [{"type": "text", "text": "…"}]
+          }
+        ],
+        "phone": "6588123456"   # digits only
       }
     """
     api_key  = os.environ.get("1MSG_API_KEY")
@@ -60,16 +76,17 @@ def send_interactive_message(payload):
 # -------------------------------------------------------------------
 def send_template_message(to: str, template_name: str, template_params: list):
     """
-    to            : recipient’s phone number in full international format (no “+” or spaces), e.g. "6588123456"
-    template_name : the exact name of your WhatsApp template (e.g. "main_menu_v2")
-    template_params: a list of strings for each placeholder in your template’s body
+    to            : recipient’s phone number (digits only), e.g. "6588123456"
+    template_name : the exact name of your WhatsApp template, e.g. "main_menu_v2"
+    template_params: a list of strings for each placeholder in that template’s body
     """
     api_key   = os.environ.get("1MSG_API_KEY")
-    namespace = os.environ.get("1MSG_NAMESPACE")    # must be set in Heroku’s config vars
+    namespace = os.environ.get("1MSG_NAMESPACE")  # configured in Heroku config vars
     url       = f"{os.environ.get('1MSG_BASE_URL')}/sendTemplate"
 
+    # Build the 1msg /sendTemplate payload:
     payload = {
-        "token":    api_key,
+        "token":     api_key,
         "namespace": namespace,
         "template":  template_name,
         "language":  {"policy": "deterministic", "code": "en"},
@@ -79,7 +96,7 @@ def send_template_message(to: str, template_name: str, template_params: list):
                 "parameters": [{"type": "text", "text": param} for param in template_params]
             }
         ],
-        "phone": to
+        "phone": to  # MUST be digits-only
     }
 
     print("[DEBUG] 1msg SEND TEMPLATE payload:", json.dumps(payload, indent=2))
@@ -92,7 +109,7 @@ def send_template_message(to: str, template_name: str, template_params: list):
 
 
 # -------------------------------------------------------------------
-# In‐memory user‐state store (can be swapped out for Redis if desired)
+# In-memory user-state store
 # -------------------------------------------------------------------
 _user_states = {
     "car":    {},
@@ -102,15 +119,13 @@ _user_states = {
 
 def get_user_state(flow_name: str, phone_number: str):
     """
-    Return the stored state object (a dict) for this (flow_name, phone_number).
-    If none exists, returns None.
+    Return the stored state dict (or None if not found).
     """
     return _user_states.get(flow_name, {}).get(phone_number)
 
 def set_user_state(flow_name: str, phone_number: str, state_obj: dict):
     """
-    Store the given state_obj (dict) under (flow_name, phone_number).
-    ALWAYS store a dict here; never a string.
+    Store the given state_obj (a dict) under (flow_name, phone_number).
     """
     _user_states.setdefault(flow_name, {})[phone_number] = state_obj
 

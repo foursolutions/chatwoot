@@ -6,8 +6,7 @@ from helpers import (
     get_user_state,
     set_user_state,
     clear_user_state,
-    send_text_message,
-    send_interactive_message
+    send_text_message
 )
 
 # ─── Constants & Static Data ─────────────────────────────────────────────────
@@ -27,39 +26,42 @@ MOLD_AREAS = [
     { "id": "area_others",     "title": "Other Areas",   "description": "Unlisted areas"           }
 ]
 
+
 # ─── 1) FAQ Section ──────────────────────────────────────────────────────────
 def send_mold_removal_faq(to: str, phone_number_id: str):
     """
     Sends an interactive FAQ list for Mold Removal, using your updated questions
     and descriptions.
     """
-    payload = {
-        "messaging_product": "whatsapp",
-        "recipient_type": "individual",
-        "to": to,
-        "type": "interactive",
-        "interactive": {
-            "type": "list",
-            "header": { "type": "text", "text": "Mold Removal FAQ" },
-            "body":   { "text": "Select a FAQ question:" },
-            "footer": { "text": "Tap an option" },
-            "action": {
-                "button": "Select FAQ",
-                "sections": [ {
-                    "title": "FAQ Questions",
-                    "rows": [
-                        { "id": "mfaq_safe",        "title": "Is it safe? Kids/Pets",        "description": "Are treatments safe for kids and pets?" },
-                        { "id": "mfaq_included",    "title": "Service Details",             "description": "What's included in our service?"       },
-                        { "id": "mfaq_warranty",    "title": "Warranty Details",            "description": "Coverage and terms"                    },
-                        { "id": "mfaq_preparation", "title": "Preparation",                 "description": "How to prepare your space?"            },
-                        { "id": "mfaq_duration",    "title": "Service Duration",            "description": "How long does it take?"               },
-                        { "id": "mfaq_payment",     "title": "Payment Options",             "description": "Payment methods accepted"              }
-                    ]
-                } ]
-            }
+    interactive_payload = {
+        "type": "list",
+        "header": { "type": "text", "text": "Mold Removal FAQ" },
+        "body":   { "text": "Select a FAQ question:" },
+        "footer": { "text": "Tap an option" },
+        "action": {
+            "button": "Select FAQ",
+            "sections": [ {
+                "title": "FAQ Questions",
+                "rows": [
+                    { "id": "mfaq_safe",        "title": "Is it safe? Kids/Pets",        "description": "Are treatments safe for kids and pets?" },
+                    { "id": "mfaq_included",    "title": "Service Details",             "description": "What's included in our service?"       },
+                    { "id": "mfaq_warranty",    "title": "Warranty Details",            "description": "Coverage and terms"                    },
+                    { "id": "mfaq_preparation", "title": "Preparation",                 "description": "How to prepare your space?"            },
+                    { "id": "mfaq_duration",    "title": "Service Duration",            "description": "How long does it take?"               },
+                    { "id": "mfaq_payment",     "title": "Payment Options",             "description": "Payment methods accepted"              }
+                ]
+            } ]
         }
     }
-    send_interactive_message(payload)
+
+    resp = send_text_message({
+        "to": to,
+        "type": "interactive",
+        "messaging_product": "whatsapp",
+        "interactive": interactive_payload
+    })
+    print(f"[DEBUG] send_mold_removal_faq → {resp}")
+
 
 def process_mold_faq_response(to: str, faq_id: str):
     """
@@ -119,6 +121,7 @@ def process_mold_faq_response(to: str, faq_id: str):
         "text": { "body": answer }
     })
 
+
 # ─── 2) “Request a Quotation” / Option Prompt ─────────────────────────────────
 def send_mold_option_prompt(to: str, phone_number_id: str):
     """
@@ -128,24 +131,26 @@ def send_mold_option_prompt(to: str, phone_number_id: str):
       • Return to Main Menu
     """
     text = "We are happy to help! Select an option below for us to better understand what you are looking for!"
-    payload = {
-        "messaging_product": "whatsapp",
-        "recipient_type": "individual",
-        "to": to,
-        "type": "interactive",
-        "interactive": {
-            "type": "button",
-            "body": { "text": text },
-            "action": {
-                "buttons": [
-                    { "type": "reply", "reply": { "id": "mold_get_quote", "title": "Request a Quotation" } },
-                    { "type": "reply", "reply": { "id": "mold_more_info",  "title": "More Info on Service" } },
-                    { "type": "reply", "reply": { "id": "return_main_menu","title": "Return to Main Menu" } }
-                ]
-            }
+    interactive_payload = {
+        "type": "button",
+        "body": { "text": text },
+        "action": {
+            "buttons": [
+                { "type": "reply", "reply": { "id": "mold_get_quote",    "title": "Request a Quotation"   } },
+                { "type": "reply", "reply": { "id": "mold_more_info",     "title": "More Info on Service"  } },
+                { "type": "reply", "reply": { "id": "return_main_menu",  "title": "Return to Main Menu"   } }
+            ]
         }
     }
-    send_interactive_message(payload)
+
+    resp = send_text_message({
+        "to": to,
+        "type": "interactive",
+        "messaging_product": "whatsapp",
+        "interactive": interactive_payload
+    })
+    print(f"[DEBUG] send_mold_option_prompt → {resp}")
+
 
 # ─── 3) “Select Mold Area” → Interactive List ─────────────────────────────────
 def send_mold_area_selection(to: str, phone_number_id: str):
@@ -166,90 +171,95 @@ def send_mold_area_selection(to: str, phone_number_id: str):
         { "id": area["id"], "title": area["title"], "description": area["description"] }
         for area in available
     ]
-    payload = {
-        "messaging_product": "whatsapp",
-        "recipient_type": "individual",
-        "to": to,
-        "type": "interactive",
-        "interactive": {
-            "type": "list",
-            "header": { "type": "text", "text": "Mold Affected Areas" },
-            "body":   { "text": "Select 1 or multiple areas affected by mold (1 entry at a time):" },
-            "footer": { "text": "Select Area" },
-            "action": {
-                "button": "Select Area",
-                "sections": [ { "title": "Affected Areas", "rows": rows } ]
-            }
+    interactive_payload = {
+        "type": "list",
+        "header": { "type": "text", "text": "Mold Affected Areas" },
+        "body":   { "text": "Select 1 or multiple areas affected by mold (1 entry at a time):" },
+        "footer": { "text": "Select Area" },
+        "action": {
+            "button": "Select Area",
+            "sections": [ { "title": "Affected Areas", "rows": rows } ]
         }
     }
-    send_interactive_message(payload)
+
+    resp = send_text_message({
+        "to": to,
+        "type": "interactive",
+        "messaging_product": "whatsapp",
+        "interactive": interactive_payload
+    })
+    print(f"[DEBUG] send_mold_area_selection → {resp}")
 
     # Mark in Redis that we’re awaiting a list reply for the area selection
     state["step"] = "mold_waiting_area_selection"
     set_user_state(MOLD_PREFIX, to, state)
+
 
 # ─── 4) Bedroom / Bathroom Count Prompts ──────────────────────────────────────
 def send_bedroom_count_prompt(to: str, phone_number_id: str):
     """
     After the user picks “Bedroom,” ask how many bedrooms are affected.
     """
-    payload = {
-        "messaging_product": "whatsapp",
-        "recipient_type": "individual",
-        "to": to,
-        "type": "interactive",
-        "interactive": {
-            "type": "list",
-            "header": { "type": "text", "text": "Number of Bedrooms Affected" },
-            "body":   { "text": "How many bedrooms are affected?" },
-            "footer": { "text": "Select an option" },
-            "action": {
-                "button": "Select Count",
-                "sections": [ {
-                    "title": "Bedroom Count",
-                    "rows": [
-                        { "id": "bedroom_count_1", "title": "1 bedroom",          "description": "One bedroom affected"            },
-                        { "id": "bedroom_count_2", "title": "2 bedrooms",         "description": "Two bedrooms affected"           },
-                        { "id": "bedroom_count_3", "title": "3 bedrooms or more", "description": "Three or more bedrooms affected" }
-                    ]
-                } ]
-            }
+    interactive_payload = {
+        "type": "list",
+        "header": { "type": "text", "text": "Number of Bedrooms Affected" },
+        "body":   { "text": "How many bedrooms are affected?" },
+        "footer": { "text": "Select an option" },
+        "action": {
+            "button": "Select Count",
+            "sections": [ {
+                "title": "Bedroom Count",
+                "rows": [
+                    { "id": "bedroom_count_1", "title": "1 bedroom",          "description": "One bedroom affected"            },
+                    { "id": "bedroom_count_2", "title": "2 bedrooms",         "description": "Two bedrooms affected"           },
+                    { "id": "bedroom_count_3", "title": "3 bedrooms or more", "description": "Three or more bedrooms affected" }
+                ]
+            } ]
         }
     }
-    send_interactive_message(payload)
+
+    resp = send_text_message({
+        "to": to,
+        "type": "interactive",
+        "messaging_product": "whatsapp",
+        "interactive": interactive_payload
+    })
+    print(f"[DEBUG] send_bedroom_count_prompt → {resp}")
 
     state = get_user_state(MOLD_PREFIX, to) or {}
     state["step"] = "mold_waiting_bedroom_count"
     set_user_state(MOLD_PREFIX, to, state)
 
+
 def send_bathroom_count_prompt(to: str, phone_number_id: str):
     """
     After the user picks “Bathroom,” ask how many bathrooms are affected.
     """
-    payload = {
-        "messaging_product": "whatsapp",
-        "recipient_type": "individual",
-        "to": to,
-        "type": "interactive",
-        "interactive": {
-            "type": "list",
-            "header": { "type": "text", "text": "Number of Bathrooms Affected" },
-            "body":   { "text": "How many bathrooms are affected?" },
-            "footer": { "text": "Select an option" },
-            "action": {
-                "button": "Select Count",
-                "sections": [ {
-                    "title": "Bathroom Count",
-                    "rows": [
-                        { "id": "bathroom_count_1", "title": "1 bathroom",          "description": "One bathroom affected"            },
-                        { "id": "bathroom_count_2", "title": "2 bathrooms",         "description": "Two bathrooms affected"           },
-                        { "id": "bathroom_count_3", "title": "3 bathrooms or more", "description": "Three or more bathrooms affected" }
-                    ]
-                } ]
-            }
+    interactive_payload = {
+        "type": "list",
+        "header": { "type": "text", "text": "Number of Bathrooms Affected" },
+        "body":   { "text": "How many bathrooms are affected?" },
+        "footer": { "text": "Select an option" },
+        "action": {
+            "button": "Select Count",
+            "sections": [ {
+                "title": "Bathroom Count",
+                "rows": [
+                    { "id": "bathroom_count_1", "title": "1 bathroom",          "description": "One bathroom affected"            },
+                    { "id": "bathroom_count_2", "title": "2 bathrooms",         "description": "Two bathrooms affected"           },
+                    { "id": "bathroom_count_3", "title": "3 bathrooms or more", "description": "Three or more bathrooms affected" }
+                ]
+            } ]
         }
     }
-    send_interactive_message(payload)
+
+    resp = send_text_message({
+        "to": to,
+        "type": "interactive",
+        "messaging_product": "whatsapp",
+        "interactive": interactive_payload
+    })
+    print(f"[DEBUG] send_bathroom_count_prompt → {resp}")
 
     state = get_user_state(MOLD_PREFIX, to) or {}
     state["step"] = "mold_waiting_bathroom_count"
@@ -262,62 +272,66 @@ def send_add_area_confirmation_prompt(to: str, phone_number_id: str):
     After any area selection (other than bedroom/bathroom), ask:
       “Would you like to add another affected area?”
     """
-    payload = {
-        "messaging_product": "whatsapp",
-        "recipient_type": "individual",
-        "to": to,
-        "type": "interactive",
-        "interactive": {
-            "type": "button",
-            "body": { "text": "Would you like to add another affected area?" },
-            "action": {
-                "buttons": [
-                    { "type": "reply", "reply": { "id": "add_area_yes", "title": "Yes" } },
-                    { "type": "reply", "reply": { "id": "add_area_no",  "title": "No"  } }
-                ]
-            }
+    interactive_payload = {
+        "type": "button",
+        "body": { "text": "Would you like to add another affected area?" },
+        "action": {
+            "buttons": [
+                { "type": "reply", "reply": { "id": "add_area_yes", "title": "Yes" } },
+                { "type": "reply", "reply": { "id": "add_area_no",  "title": "No"  } }
+            ]
         }
     }
-    send_interactive_message(payload)
+
+    resp = send_text_message({
+        "to": to,
+        "type": "interactive",
+        "messaging_product": "whatsapp",
+        "interactive": interactive_payload
+    })
+    print(f"[DEBUG] send_add_area_confirmation_prompt → {resp}")
 
     state = get_user_state(MOLD_PREFIX, to) or {}
     state["step"] = "mold_waiting_add_area_confirmation"
     set_user_state(MOLD_PREFIX, to, state)
+
 
 # ─── 6) Growth Location Prompt ────────────────────────────────────────────────
 def send_mold_growth_location(to: str, phone_number_id: str):
     """
     Asks: “Where did you spot the mold growth?” with a list of options.
     """
-    payload = {
-        "messaging_product": "whatsapp",
-        "recipient_type": "individual",
-        "to": to,
-        "type": "interactive",
-        "interactive": {
-            "type": "list",
-            "header": { "type": "text", "text": "Mold Growth Location" },
-            "body":   { "text": "Where did you spot the mold growth?\nSelect one:" },
-            "footer": { "text": "Choose an option" },
-            "action": {
-                "button": "Select Location",
-                "sections": [ {
-                    "title": "Growth Options",
-                    "rows": [
-                        { "id": "growth_ceiling", "title": "Ceiling only",       "description": "Mold on ceiling"         },
-                        { "id": "growth_walls",   "title": "Walls only",         "description": "Mold on walls"           },
-                        { "id": "growth_both",    "title": "Walls and ceiling",  "description": "Mold on both"            },
-                        { "id": "growth_others",  "title": "Others",             "description": "Enter custom location"   }
-                    ]
-                } ]
-            }
+    interactive_payload = {
+        "type": "list",
+        "header": { "type": "text", "text": "Mold Growth Location" },
+        "body":   { "text": "Where did you spot the mold growth?\nSelect one:" },
+        "footer": { "text": "Choose an option" },
+        "action": {
+            "button": "Select Location",
+            "sections": [ {
+                "title": "Growth Options",
+                "rows": [
+                    { "id": "growth_ceiling", "title": "Ceiling only",       "description": "Mold on ceiling"         },
+                    { "id": "growth_walls",   "title": "Walls only",         "description": "Mold on walls"           },
+                    { "id": "growth_both",    "title": "Walls and ceiling",  "description": "Mold on both"            },
+                    { "id": "growth_others",  "title": "Others",             "description": "Enter custom location"   }
+                ]
+            } ]
         }
     }
-    send_interactive_message(payload)
+
+    resp = send_text_message({
+        "to": to,
+        "type": "interactive",
+        "messaging_product": "whatsapp",
+        "interactive": interactive_payload
+    })
+    print(f"[DEBUG] send_mold_growth_location → {resp}")
 
     state = get_user_state(MOLD_PREFIX, to) or {}
     state["step"] = "mold_waiting_growth_location"
     set_user_state(MOLD_PREFIX, to, state)
+
 
 # ─── 7) Summary & Confirmation ───────────────────────────────────────────────
 def send_mold_removal_summary(to: str, phone_number_id: str):
@@ -349,26 +363,28 @@ def send_mold_removal_summary(to: str, phone_number_id: str):
         summary += f"\nGrowth Location: {chosen}\n"
 
     body_text = summary + "\nSelect 'Yes' or 'No' to confirm."
-    payload = {
-        "messaging_product": "whatsapp",
-        "recipient_type": "individual",
-        "to": to,
-        "type": "interactive",
-        "interactive": {
-            "type": "button",
-            "body": { "text": body_text },
-            "action": {
-                "buttons": [
-                    { "type": "reply", "reply": { "id": "mold_confirm_yes", "title": "Yes" } },
-                    { "type": "reply", "reply": { "id": "mold_confirm_no",  "title": "No" } }
-                ]
-            }
+    interactive_payload = {
+        "type": "button",
+        "body": { "text": body_text },
+        "action": {
+            "buttons": [
+                { "type": "reply", "reply": { "id": "mold_confirm_yes", "title": "Yes" } },
+                { "type": "reply", "reply": { "id": "mold_confirm_no",  "title": "No" } }
+            ]
         }
     }
-    send_interactive_message(payload)
+
+    resp = send_text_message({
+        "to": to,
+        "type": "interactive",
+        "messaging_product": "whatsapp",
+        "interactive": interactive_payload
+    })
+    print(f"[DEBUG] send_mold_removal_summary → {resp}")
 
     state["step"] = "mold_waiting_confirmation"
     set_user_state(MOLD_PREFIX, to, state)
+
 
 # ─── 8) Main Flow‐Handler: handle_mold_flow ────────────────────────────────────
 def handle_mold_flow(from_number: str, message: dict, user_state: dict):

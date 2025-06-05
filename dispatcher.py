@@ -5,7 +5,7 @@ from flask import Flask, request, Response
 from helpers import (
     send_text_message,
     send_interactive_message,
-    send_template_message,      # ← Add this import
+    send_template_message,      # ← We need this for sending main_menu_v2
     get_user_state,
     set_user_state,
     clear_user_state
@@ -39,11 +39,13 @@ def receive_message():
     # ─── Extract messages array ───
     messages = None
     if isinstance(payload.get("entry"), list):
+        # Standard 1msg wrapper
         entry   = payload.get("entry", [{}])[0]
         changes = entry.get("changes", [{}])[0]
         value   = changes.get("value", {})
         messages = value.get("messages", [])
     elif isinstance(payload.get("messages"), list):
+        # Dev‐kit format: top‐level "messages": [...]
         messages = payload.get("messages", [])
     else:
         messages = []
@@ -52,12 +54,13 @@ def receive_message():
         return Response(status=200)
 
     message_raw = messages[0]
+    # Normalize “from” vs “author”
     raw_from = message_raw.get("from") or message_raw.get("author") or ""
     from_number = raw_from.split("@")[0] if "@" in raw_from else raw_from
 
     msg_type = message_raw.get("type", "")
 
-    # ✅ Normalize body text from various formats (chat, text, etc.)
+    # ───── Normalize body_text (for “chat”, “text”, or fallback) ─────
     body_text = ""
     if "text" in message_raw and "body" in message_raw["text"]:
         body_text = message_raw["text"]["body"].strip().lower()
@@ -71,7 +74,7 @@ def receive_message():
         clear_user_state("bedbug", from_number)
         clear_user_state("mold", from_number)
 
-        # ✅ Send approved main_menu_v2 template via send_template_message()
+        # Send the approved “main_menu_v2” template via send_template_message()
         send_template_message(
             to=from_number,
             template_name="main_menu_v2",
@@ -81,14 +84,31 @@ def receive_message():
 
     # ─────── 2) “button” presses ───────
     if msg_type == "button":
-        button_id = message_raw["button"].get("payload", "")
+        # Some 1msg payloads include message_raw["button"]["payload"],
+        # but some only include body="Need help on Pest!" with no "button" key.
+        if "button" in message_raw:
+            button_id = message_raw["button"].get("payload", "")
+        else:
+            # Fallback: map the body_text back to payload IDs
+            if body_text == "need help on pest!":
+                button_id = "help_pest"
+            elif body_text == "need help on mold!":
+                button_id = "help_mold"
+            elif body_text == "live human":
+                button_id = "live_human"
+            else:
+                button_id = ""
+
         print(f"[DEBUG] BUTTON payload = {button_id}")
+
         if button_id == "help_pest":
             set_user_state("car", from_number, {})
             return handle_car_fumigation_flow(from_number, message_raw, API_KEY, BASE_URL)
+
         if button_id == "help_mold":
             set_user_state("mold", from_number, {})
             return handle_mold_flow(from_number, message_raw, API_KEY, BASE_URL)
+
         if button_id == "live_human":
             send_text_message({
                 "to": from_number,
@@ -98,7 +118,7 @@ def receive_message():
             })
             return Response(status=200)
 
-    # ─────── 3–5) Resume if in an active flow ───────
+    # ─────── 3–5) Resume existing flow if any ───────
     if get_user_state("car", from_number) is not None:
         return handle_car_fumigation_flow(from_number, message_raw, API_KEY, BASE_URL)
     if get_user_state("bedbug", from_number) is not None:
@@ -106,11 +126,10 @@ def receive_message():
     if get_user_state("mold", from_number) is not None:
         return handle_mold_flow(from_number, message_raw, API_KEY, BASE_URL)
 
-    # ─────── 6) Fallback: show main menu again ───────
-    if msg_type in ("text", "chat") or body_text:
+    # ─────── 6) Fallback: any other “text”/“chat”/“unsupported” → main menu ───────
+    # e.g. msg_type in ("text","chat","unsupported") or body_text is nonempty.
+    if msg_type in ("text", "chat", "unsupported") or body_text:
         print("[DEBUG] Falling back to show main menu for:", body_text, "msg_type=", msg_type)
-
-        # ✅ Send approved main_menu_v2 template via send_template_message()
         send_template_message(
             to=from_number,
             template_name="main_menu_v2",

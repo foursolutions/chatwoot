@@ -10,9 +10,9 @@ from helpers import (
     set_user_state,
     clear_user_state
 )
-from car_fumigation import handle_car_fumigation_flow
-from bedbug import handle_bedbug_flow
-from mold import handle_mold_flow
+from flows.car_fumigation import handle_car_fumigation_flow
+from flows.bedbug import handle_bedbug_flow
+from flows.mold import handle_mold_flow
 
 app = Flask(__name__)
 

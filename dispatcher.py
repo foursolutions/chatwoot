@@ -4,7 +4,7 @@ from flask import Flask, request, Response
 from helpers import (
     send_text_message,
     send_interactive_message,
-    send_template_message,    # ← we need this here
+    send_template_message,
     get_user_state,
     set_user_state,
     clear_user_state
@@ -38,11 +38,13 @@ def receive_message():
     # ─── Extract messages array ───
     messages = None
     if isinstance(payload.get("entry"), list):
+        # 1msg “entry/changes/value/messages” format
         entry   = payload.get("entry", [{}])[0]
         changes = entry.get("changes", [{}])[0]
         value   = changes.get("value", {})
         messages = value.get("messages", [])
     elif isinstance(payload.get("messages"), list):
+        # 1msg “messages” top‐level format
         messages = payload.get("messages", [])
     else:
         messages = []
@@ -52,13 +54,13 @@ def receive_message():
 
     message_raw = messages[0]
 
-    # 1msg uses either "from" or "author". Normalize:
-    raw_from   = message_raw.get("from") or message_raw.get("author") or ""
+    # 1msg uses either "from" (sometimes) or "author" (often). Normalize to from_number:
+    raw_from    = message_raw.get("from") or message_raw.get("author") or ""
     from_number = raw_from.split("@")[0] if "@" in raw_from else raw_from
 
     msg_type = message_raw.get("type", "")
 
-    # ─── Normalize body text from various formats ───
+    # ─── Normalize body text (for "text" or fallback) ───
     body_text = ""
     if msg_type == "text" and message_raw.get("text", {}).get("body"):
         body_text = message_raw["text"]["body"].strip().lower()
@@ -74,44 +76,26 @@ def receive_message():
         clear_user_state("bedbug", from_number)
         clear_user_state("mold", from_number)
 
-        # ❌ OLD (incorrect) approach:
-        # template_payload = {
-        #     "to": from_number,
-        #     "type": "template",
-        #     "messaging_product": "whatsapp",
-        #     "template": {
-        #         "name": "main_menu_v2",
-        #         "language": { "code": "en", "policy": "deterministic" },
-        #         "components": [
-        #             {
-        #                 "type": "body",
-        #                 "parameters": [{ "type": "text", "text": "there" }]
-        #             }
-        #         ]
-        #     }
-        # }
-        # send_interactive_message(template_payload)
-
-        # ✔️ NEW: use send_template_message() instead:
+        # Send the “main_menu_v2” template back:
         send_template_message(
             to=from_number,
             template_name="main_menu_v2",
             template_params=["there"]
         )
-
         return Response(status=200)
 
     # ─────── 2) “button” presses ───────
     if msg_type == "button":
-        # 1msg usually puts the entire button label into message["body"]
-        nested = message_raw.get("button", {})
-        button_id = nested.get("payload", "").lower() if isinstance(nested, dict) else ""
+        nested      = message_raw.get("button", {})
+        button_id   = nested.get("payload", "").lower() if isinstance(nested, dict) else ""
         if not button_id:
+            # Sometimes 1msg puts the actual button label into message["body"]
             button_id = message_raw.get("body", "").strip().lower()
 
         print(f"[DEBUG] BUTTON payload_id = {button_id!r}")
 
         if button_id.startswith("need help on pest"):
+            # Initialize the "car" flow and hand off to its handler
             set_user_state("car", from_number, {})
             return handle_car_fumigation_flow(from_number, message_raw, API_KEY, BASE_URL)
 
@@ -120,25 +104,26 @@ def receive_message():
             return handle_mold_flow(from_number, message_raw, get_user_state("mold", from_number))
 
         if button_id == "live human":
+            # Just send a plain‐text ack
             send_text_message({
                 "to": from_number,
                 "type": "text",
                 "messaging_product": "whatsapp",
-                "text": { "body": "Sure—one of our agents will be with you shortly." }
+                "text": {"body": "Sure—one of our agents will be with you shortly."}
             })
             return Response(status=200)
 
-    # ─────── 3) Resume if in a “car” flow ───────
+    # ─────── 3) Already in a “car” flow? ───────
     user_state_car = get_user_state("car", from_number)
     if user_state_car is not None:
         return handle_car_fumigation_flow(from_number, message_raw, API_KEY, BASE_URL)
 
-    # ─────── 4) Resume if in a “bedbug” flow ───────
+    # ─────── 4) Already in a “bedbug” flow? ───────
     user_state_bedbug = get_user_state("bedbug", from_number)
     if user_state_bedbug is not None:
         return handle_bedbug_flow(from_number, message_raw, user_state_bedbug)
 
-    # ─────── 5) Resume if in a “mold” flow ───────
+    # ─────── 5) Already in a “mold” flow? ───────
     user_state_mold = get_user_state("mold", from_number)
     if user_state_mold is not None:
         return handle_mold_flow(from_number, message_raw, user_state_mold)
@@ -147,22 +132,11 @@ def receive_message():
     if msg_type in ("text", "chat") or body_text:
         print("[DEBUG] Falling back to show main menu for:", body_text, "msg_type=", msg_type)
 
-        # ❌ OLD (incorrect) approach:
-        # template_payload = {
-        #     "to": from_number,
-        #     "type": "template",
-        #     "messaging_product": "whatsapp",
-        #     "template": { … }
-        # }
-        # send_interactive_message(template_payload)
-
-        # ✔️ NEW: use send_template_message() instead:
         send_template_message(
             to=from_number,
             template_name="main_menu_v2",
             template_params=["there"]
         )
-
         return Response(status=200)
 
     return Response(status=200)

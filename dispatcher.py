@@ -35,16 +35,13 @@ def receive_message():
     print(">>>> RAW INCOMING JSON:", json.dumps(payload, indent=2))
 
     # ─── Extract messages array ───
-    # 1msg sometimes wraps under entry/changes/value, sometimes sends top‐level "messages".
     messages = None
     if isinstance(payload.get("entry"), list):
-        # Original pattern: payload["entry"][0]["changes"][0]["value"]["messages"]
         entry   = payload.get("entry", [{}])[0]
         changes = entry.get("changes", [{}])[0]
         value   = changes.get("value", {})
         messages = value.get("messages", [])
     elif isinstance(payload.get("messages"), list):
-        # Dev-kit format: top‐level "messages": [...]
         messages = payload.get("messages", [])
     else:
         messages = []
@@ -53,26 +50,25 @@ def receive_message():
         return Response(status=200)
 
     message_raw = messages[0]
-    # 1msg uses either "from" or "chatId"/"author". We normalize to from_number:
     raw_from = message_raw.get("from") or message_raw.get("author") or ""
     from_number = raw_from.split("@")[0] if "@" in raw_from else raw_from
 
     msg_type = message_raw.get("type", "")
-    # Grab the literal "body" field if present
-    body_text = message_raw.get("body", "").strip().lower()
-    # For older style, if msg_type == "text", the actual body is nested under message["text"]["body"]:
-    if msg_type == "text" and "text" in message_raw:
-        body_text = message_raw["text"].get("body", "").strip().lower()
 
-    # ─────── 1) “reset” check: ANY type that contains a lowercase "reset" in the payload ───────
+    # ✅ Normalize body text from various formats (chat, text, etc.)
+    body_text = ""
+    if "text" in message_raw and "body" in message_raw["text"]:
+        body_text = message_raw["text"]["body"].strip().lower()
+    elif "body" in message_raw:
+        body_text = message_raw["body"].strip().lower()
+
+    # ─────── 1) “reset” check ───────
     if body_text == "reset":
         print("[DEBUG] RESET branch hit (body_text=='reset'), msg_type=", msg_type)
-        # Clear all flow states:
         clear_user_state("car", from_number)
         clear_user_state("bedbug", from_number)
         clear_user_state("mold", from_number)
 
-        # Send main‐menu template back via 1msg
         interactive_payload = {
             "to": from_number,
             "type": "interactive",
@@ -136,24 +132,17 @@ def receive_message():
             })
             return Response(status=200)
 
-    # ─────── 3) Already in a “pest” flow? ───────
-    user_state_car = get_user_state("car", from_number)
-    if user_state_car is not None:
+    # ─────── 3–5) Resume if in flow ───────
+    if get_user_state("car", from_number) is not None:
         return handle_car_fumigation_flow(from_number, message_raw, API_KEY, BASE_URL)
-
-    # ─────── 4) Already in a “bedbug” flow? ───────
-    user_state_bedbug = get_user_state("bedbug", from_number)
-    if user_state_bedbug is not None:
+    if get_user_state("bedbug", from_number) is not None:
         return handle_bedbug_flow(from_number, message_raw, API_KEY, BASE_URL)
-
-    # ─────── 5) Already in a “mold” flow? ───────
-    user_state_mold = get_user_state("mold", from_number)
-    if user_state_mold is not None:
+    if get_user_state("mold", from_number) is not None:
         return handle_mold_flow(from_number, message_raw, API_KEY, BASE_URL)
 
-    # ─────── 6) Any other free-text (not “reset”) → send main menu ───────
-    if msg_type in ("text", "chat", "chat") or body_text:
-        print("[DEBUG] Falling back to “show main menu” for:", body_text, "msg_type=", msg_type)
+    # ─────── 6) Fallback: show main menu ───────
+    if msg_type in ("text", "chat") or body_text:
+        print("[DEBUG] Falling back to show main menu for:", body_text, "msg_type=", msg_type)
         interactive_payload = {
             "to": from_number,
             "type": "interactive",

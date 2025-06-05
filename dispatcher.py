@@ -1,11 +1,10 @@
-# dispatcher.py
-
 import os
 import json
 from flask import Flask, request, Response
 from helpers import (
     send_text_message,
     send_interactive_message,
+    send_template_message,    # ← we need this here
     get_user_state,
     set_user_state,
     clear_user_state
@@ -37,7 +36,6 @@ def receive_message():
     print(">>>> RAW INCOMING JSON:", json.dumps(payload, indent=2))
 
     # ─── Extract messages array ───
-    # 1msg sometimes wraps under entry/changes/value, sometimes sends top‐level "messages".
     messages = None
     if isinstance(payload.get("entry"), list):
         entry   = payload.get("entry", [{}])[0]
@@ -45,7 +43,6 @@ def receive_message():
         value   = changes.get("value", {})
         messages = value.get("messages", [])
     elif isinstance(payload.get("messages"), list):
-        # Dev-kit format: top‐level "messages": [...]
         messages = payload.get("messages", [])
     else:
         messages = []
@@ -55,71 +52,70 @@ def receive_message():
 
     message_raw = messages[0]
 
-    # 1msg uses either "from" or "chatId"/"author". We normalize to from_number:
+    # 1msg uses either "from" or "author". Normalize:
     raw_from   = message_raw.get("from") or message_raw.get("author") or ""
     from_number = raw_from.split("@")[0] if "@" in raw_from else raw_from
 
     msg_type = message_raw.get("type", "")
 
-    # ─── Normalize body text from various formats (chat, text, etc.) ───
+    # ─── Normalize body text from various formats ───
     body_text = ""
-    if message_raw.get("type") == "text" and message_raw.get("text", {}).get("body"):
+    if msg_type == "text" and message_raw.get("text", {}).get("body"):
         body_text = message_raw["text"]["body"].strip().lower()
     elif message_raw.get("body"):
         body_text = message_raw["body"].strip().lower()
 
-    # ─────── 1) “reset” check: ANY type that contains a lowercase "reset" in the payload ───────
+    # ─────── 1) “reset” check ───────
     if body_text == "reset":
         print("[DEBUG] RESET branch hit (body_text=='reset'), msg_type=", msg_type)
+
         # Clear all flow states:
         clear_user_state("car", from_number)
         clear_user_state("bedbug", from_number)
         clear_user_state("mold", from_number)
 
-        # Send main‐menu template back via 1msg
-        template_payload = {
-            "to": from_number,
-            "type": "template",
-            "messaging_product": "whatsapp",
-            "template": {
-                "name": "main_menu_v2",
-                "language": { "code": "en", "policy": "deterministic" },
-                "components": [
-                    {
-                        "type": "body",
-                        "parameters": [
-                            {
-                                "type": "text",
-                                "text": "there"
-                            }
-                        ]
-                    }
-                ]
-            }
-        }
-        send_interactive_message(template_payload)
+        # ❌ OLD (incorrect) approach:
+        # template_payload = {
+        #     "to": from_number,
+        #     "type": "template",
+        #     "messaging_product": "whatsapp",
+        #     "template": {
+        #         "name": "main_menu_v2",
+        #         "language": { "code": "en", "policy": "deterministic" },
+        #         "components": [
+        #             {
+        #                 "type": "body",
+        #                 "parameters": [{ "type": "text", "text": "there" }]
+        #             }
+        #         ]
+        #     }
+        # }
+        # send_interactive_message(template_payload)
+
+        # ✔️ NEW: use send_template_message() instead:
+        send_template_message(
+            to=from_number,
+            template_name="main_menu_v2",
+            template_params=["there"]
+        )
+
         return Response(status=200)
 
     # ─────── 2) “button” presses ───────
     if msg_type == "button":
-        # 1msg actually puts the *entire button label* into message["body"] (e.g. "Need help on Pest!")
-        button_id = ""
-        nested = message_raw.get("button", {})                # usually {}, since 1MSG may not include a "button" field
-        if isinstance(nested, dict):
-            button_id = nested.get("payload", "").lower()     # try reading nested.payload first
+        # 1msg usually puts the entire button label into message["body"]
+        nested = message_raw.get("button", {})
+        button_id = nested.get("payload", "").lower() if isinstance(nested, dict) else ""
         if not button_id:
-            # fallback to raw body text, lowercased
             button_id = message_raw.get("body", "").strip().lower()
 
         print(f"[DEBUG] BUTTON payload_id = {button_id!r}")
 
         if button_id.startswith("need help on pest"):
-            # Start the Car Fumigation flow
             set_user_state("car", from_number, {})
             return handle_car_fumigation_flow(from_number, message_raw, API_KEY, BASE_URL)
 
         if button_id.startswith("need help on mold"):
-            # Start the Mold flow
             set_user_state("mold", from_number, {})
             return handle_mold_flow(from_number, message_raw, get_user_state("mold", from_number))
 
@@ -147,30 +143,26 @@ def receive_message():
     if user_state_mold is not None:
         return handle_mold_flow(from_number, message_raw, user_state_mold)
 
-    # ─────── 6) Fallback for any other free-text (not “reset”) → send main menu ───────
+    # ─────── 6) Fallback: show main menu again ───────
     if msg_type in ("text", "chat") or body_text:
-        print("[DEBUG] Falling back to “show main menu” for:", body_text, "msg_type=", msg_type)
-        template_payload = {
-            "to": from_number,
-            "type": "template",
-            "messaging_product": "whatsapp",
-            "template": {
-                "name": "main_menu_v2",
-                "language": { "code": "en", "policy": "deterministic" },
-                "components": [
-                    {
-                        "type": "body",
-                        "parameters": [
-                            {
-                                "type": "text",
-                                "text": "there"
-                            }
-                        ]
-                    }
-                ]
-            }
-        }
-        send_interactive_message(template_payload)
+        print("[DEBUG] Falling back to show main menu for:", body_text, "msg_type=", msg_type)
+
+        # ❌ OLD (incorrect) approach:
+        # template_payload = {
+        #     "to": from_number,
+        #     "type": "template",
+        #     "messaging_product": "whatsapp",
+        #     "template": { … }
+        # }
+        # send_interactive_message(template_payload)
+
+        # ✔️ NEW: use send_template_message() instead:
+        send_template_message(
+            to=from_number,
+            template_name="main_menu_v2",
+            template_params=["there"]
+        )
+
         return Response(status=200)
 
     return Response(status=200)

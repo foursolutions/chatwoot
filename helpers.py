@@ -14,16 +14,16 @@ INSTANCE_ID = "VAN388218473"                          # your 1msg instance ID
 # ────────────────────────────────────────────────────────────────────────────────
 def send_text_message(message_payload: dict) -> dict:
     """
-    message_payload should already include:
-      {
-        "to": "<chatId>",         # e.g. "6587788080@c.us"
-        "type": "text",
-        "messaging_product": "whatsapp",
-        "text": { "body": "Hello!" }
-      }
+    message_payload should include:
+    {
+      "to": "<plain_phone>",         # e.g. "6587788080"
+      "type": "text",
+      "messaging_product": "whatsapp",
+      "text": { "body": "Hello!" }
+    }
     """
     url = f"https://api.1msg.io/{INSTANCE_ID}/send"
-    headers = { "Content-Type": "application/json" }
+    headers = {"Content-Type": "application/json"}
     resp = requests.post(url, json=message_payload, headers=headers)
     try:
         return resp.json()
@@ -36,36 +36,31 @@ def send_text_message(message_payload: dict) -> dict:
 # ────────────────────────────────────────────────────────────────────────────────
 def send_template_message(to: str, template_name: str, template_params: list) -> dict:
     """
-    to: the chatId (e.g. "6587788080@c.us")
+    to: the chatId phone number **without “@c.us”**, e.g. "6587788080"
     template_name: name of your approved template (e.g. "main_menu_v2")
-    template_params: list of strings for body-placeholders
+    template_params: list of strings for body‐placeholders
     """
     url = f"https://api.1msg.io/{INSTANCE_ID}/sendTemplate"
     headers = { "Content-Type": "application/json" }
 
-    # Build the “params” array for the template
     params_array = []
-    if template_params:
-        # Example structure:
-        # "params": [
-        #   { "type": "body", "parameters": [ { "type": "text", "text": "<param1>" } ] },
-        #   { "type": "body", "parameters": [ { "type": "text", "text": "<param2>" } ] }
-        # ]
-        for p in template_params:
-            params_array.append({
-                "type": "body",
-                "parameters": [
-                    { "type": "text", "text": p }
-                ]
-            })
+    for p in template_params:
+        params_array.append({
+            "type": "body",
+            "parameters": [
+                { "type": "text", "text": p }
+            ]
+        })
 
     payload = {
         "token": API_KEY_WA,
-        "namespace": os.environ.get("WHATSAPP_NAMESPACE", ""),  # If you use a namespace, otherwise omit or set blank
+        # If you use a namespace in WhatsApp for templates, set it here.
+        # If you do not use a namespace, leave this as an empty string or omit the field entirely.
+        "namespace": os.environ.get("WHATSAPP_NAMESPACE", ""),
         "template": template_name,
         "language": { "policy": "deterministic", "code": "en" },
         "params": params_array,
-        "phone": to.replace("@c.us", "")  # 1msg expects phone without “@c.us”
+        "phone": to   # <— 1msg expects the phone number as plain digits (no “@c.us”)
     }
 
     resp = requests.post(url, json=payload, headers=headers)
@@ -76,45 +71,27 @@ def send_template_message(to: str, template_name: str, template_params: list) ->
 
 
 # ────────────────────────────────────────────────────────────────────────────────
-# send_interactive_message (retained for backwards compatibility, if needed)
-# ────────────────────────────────────────────────────────────────────────────────
-def send_interactive_message(payload: dict) -> dict:
-    """
-    payload: free-form interactive JSON. This will be silently dropped by WhatsApp
-             if it’s a “list” that isn’t pre-approved—use send_list_message instead.
-    """
-    url = f"https://api.1msg.io/{INSTANCE_ID}/send"
-    headers = { "Content-Type": "application/json" }
-    resp = requests.post(url, json=payload, headers=headers)
-    try:
-        return resp.json()
-    except ValueError:
-        return { "error": "non-json response", "status_code": resp.status_code }
-
-
-# ────────────────────────────────────────────────────────────────────────────────
-# send_list_message: Uses the 1msg “/sendList” endpoint to send a fully-supported
-#                    WhatsApp "interactive list" (pest control menu) that won’t vanish.
+# send_list_message: Sends a WhatsApp "interactive list" via 1msg’s /sendList endpoint
 # ────────────────────────────────────────────────────────────────────────────────
 def send_list_message(to_chat_id: str) -> dict:
     """
     to_chat_id must be the full WhatsApp ID, e.g. "6587788080@c.us".
-    Returns the JSON response from 1msg.
+    Returns whichever JSON 1msg sends back.
     """
     url = f"https://api.1msg.io/{INSTANCE_ID}/sendList"
     headers = { "Content-Type": "application/json" }
 
     payload = {
         "token": API_KEY_WA,
-        # ────── The “body” text that appears above the list rows ──────
+        # The “body” text that appears above the rows of your list:
         "body":   "Please select the pest control service you need assistance with:\n",
-        # ────── The “header” text at the very top ──────
+        # The “header” text at the top:
         "header": "Pest Control Services",
-        # ────── The “footer” text at the bottom ──────
+        # The “footer” text at the bottom:
         "footer": "Tap to choose",
-        # ────── The button label that opens the list ──────
+        # The button label that opens the list:
         "action": "Select Service",
-        # ────── Exactly one section called “Common Pest Issues” with its rows ──────
+        # Exactly one “section,” called “Common Pest Issues,” with each row defined:
         "sections": [
             {
                 "title": "Common Pest Issues",
@@ -157,7 +134,7 @@ def send_list_message(to_chat_id: str) -> dict:
                 ]
             }
         ],
-        # ────── “chatId” must be the full WhatsApp ID (with “@c.us”) ──────
+        # “chatId” must be the full WhatsApp ID (with “@c.us”)
         "chatId": to_chat_id
     }
 
@@ -169,11 +146,9 @@ def send_list_message(to_chat_id: str) -> dict:
 
 
 # ────────────────────────────────────────────────────────────────────────────────
-# In-Memory State Helpers (unchanged)
+# In‐memory state management for each flow (“car,” “bedbug,” “mold”)
 # ────────────────────────────────────────────────────────────────────────────────
-
 _user_states: dict = {
-    # Structure: { "<flow_name>": { "<phone>": { ... state ... } } }
     "car": {},
     "bedbug": {},
     "mold": {}

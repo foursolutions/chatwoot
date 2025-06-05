@@ -1,6 +1,5 @@
-fastapi==0.95.0
-uvicorn==0.22.0
+Flask==2.3.2
 requests==2.32.3
-redis==5.0.4
 gunicorn==23.0.0
-python-dotenv==1.1.0
+python-dotenv==1.1.0   # if you’re loading from a .env locally (optional)
+redis==5.0.4           # if you decide to switch to a Redis‐based state store in future

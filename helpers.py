@@ -1,131 +1,132 @@
-# helpers.py
+# begin helpers.py
 import os
+import json
 import requests
 
-# ——————————————  
-# 1) Load environment variables
-# ——————————————
-API_KEY  = os.getenv("1MSG_API_KEY", "").strip()
-BASE_URL = os.getenv("1MSG_BASE_URL", "").rstrip("/")  # e.g. "https://api.1msg.io/VAN388218473"
-
-if not API_KEY or not BASE_URL:
-    raise EnvironmentError(
-        "Missing 1MSG_API_KEY or 1MSG_BASE_URL in environment variables."
-    )
-
-
-# ——————————————  
-# 2) Low-level send to the 1MSG “/message” endpoint
-# ——————————————
-def send_message_json(payload: dict) -> dict:
+# -------------------------------------------------------------------
+# Helper to send a plain text message via 1msg:
+# -------------------------------------------------------------------
+def send_text_message(payload):
     """
-    Low-level helper: POST any WhatsApp payload to 1msg's /message endpoint.
-    Returns the JSON response or an {"error": ...} dict on failure.
-    """
-    url = f"{BASE_URL}/message"            # <— Note: /message, not /send
-    headers = {"Content-Type": "application/json"}
-    payload_with_token = {**payload, "token": API_KEY}
-
-    try:
-        r = requests.post(url, headers=headers, json=payload_with_token, timeout=10)
-        r.raise_for_status()
-        return r.json()
-    except requests.RequestException as e:
-        return {"error": f"requests exception: {str(e)}"}
-
-
-# ——————————————  
-# 3) Plain text message
-# ——————————————
-def send_text_message(to_number: str, text: str) -> dict:
-    """
-    Sends a plain text message to `to_number`.
-    Returns the JSON response from 1msg.
-    """
-    if not to_number.startswith("+"):
-        to_number = "+" + to_number
-
-    payload = {
-        "to": to_number,
-        "type": "text",
-        "text": {"body": text},
-        "messaging_product": "whatsapp"
-    }
-    return send_message_json(payload)
-
-
-# ——————————————  
-# 4) Interactive message (buttons / lists)
-# ——————————————
-def send_interactive_message(interactive_payload: dict) -> dict:
-    """
-    Sends an interactive‐style payload (button or list).
-    Caller must include “to”, “messaging_product”: “whatsapp”, and the correct “interactive” block.
-    """
-    return send_message_json(interactive_payload)
-
-
-# ——————————————  
-# 5) Template message
-# ——————————————
-def send_template_message(to: str, template_name: str, template_params: list) -> dict:
-    """
-    Sends a template message via 1MSG.
-    Example payload shape (adjust based on your 1MSG template setup):
+    payload should be a dict like:
       {
-        "to": "+6588662359",
-        "type": "template",
-        "template": {
-           "name": "main_menu_v2",
-           "language": {"policy": "deterministic", "code": "en"},
-           "components": [
-             {"type": "body", "parameters": [ {"type": "text", "text": "Alice"} ] }
-           ]
-        },
+        "to": "6588123456",
+        "type": "text",
+        "text": {"body": "Hello!"},
         "messaging_product": "whatsapp"
       }
     """
-    if not to.startswith("+"):
-        to = "+" + to
+    api_key  = os.environ.get("1MSG_API_KEY")
+    base_url = os.environ.get("1MSG_BASE_URL")  # e.g. https://api.1msg.io/VAN123456
+    url = f"{base_url}/messages"
+    headers = { "Content-Type": "application/json" }
+    params = { "token": api_key }
+    response = requests.post(url, params=params, headers=headers, json=payload)
+    print("[DEBUG] send_text_message →", response.status_code, response.text)
+    return response.json()
 
+# -------------------------------------------------------------------
+# Helper to send an interactive (button/list) message via 1msg
+# (unchanged).
+# -------------------------------------------------------------------
+def send_interactive_message(payload):
+    """
+    payload should be a dict like:
+      {
+        "to": "6588123456",
+        "type": "interactive",
+        "interactive": { ... },
+        "messaging_product": "whatsapp"
+      }
+    """
+    api_key  = os.environ.get("1MSG_API_KEY")
+    base_url = os.environ.get("1MSG_BASE_URL")
+    url      = f"{base_url}/messages"
+    headers  = { "Content-Type": "application/json" }
+    params   = { "token": api_key }
+    response = requests.post(url, params=params, headers=headers, json=payload)
+    print("[DEBUG] send_interactive_message →", response.status_code, response.text)
+    return response.json()
+
+# -------------------------------------------------------------------
+# NEW: send_template_message(...) for 1msg “/sendTemplate” calls.
+# Matches your existing calls in car_fumigation.py:
+#   send_template_message(to, template_name, template_params)
+# -------------------------------------------------------------------
+def send_template_message(to: str, template_name: str, template_params: list):
+    """
+    Sends a pre‐approved WhatsApp template via 1msg’s /sendTemplate endpoint.
+
+    Arguments:
+      to             – recipient phone number (no "+" sign; e.g. "6581234567")
+      template_name  – the template identifier (e.g. "main_menu_v2")
+      template_params– a list of strings to fill each {{1}}, {{2}}, etc. placeholder
+                        in the template’s body.
+
+    It will assemble the correct JSON:
+      {
+        "token": "<API_KEY>",
+        "namespace": "<NAMESPACE>",
+        "template": "<TEMPLATE_NAME>",
+        "language": {"policy":"deterministic","code":"<LANG_CODE>"},
+        "params": [{"type":"body","parameters":[ { "type":"text","text":"<param1>" }, ... ]}],
+        "phone": "<TO_NUMBER>"
+      }
+    """
+    api_key   = os.environ.get("1MSG_API_KEY")
+    base_url  = os.environ.get("1MSG_BASE_URL")       # e.g. https://api.1msg.io/VAN123456
+    namespace = os.environ.get("1MSG_NAMESPACE")      # e.g. 94d66366_9ec1_43a3_a84c_46039bd33ef5
+    lang_code = os.environ.get("1MSG_LANG_CODE", "en")# default to "en" unless overridden
+
+    url = f"{base_url}/sendTemplate"
+    headers = { "Content-Type": "application/json" }
+
+    # Build the “body” parameters array. Each placeholder <{1}>, <{2}>, ... becomes a text param.
     body_params = []
-    for s in template_params:
-        body_params.append({"type": "text", "text": str(s)})
+    for param in template_params:
+        body_params.append({
+            "type": "text",
+            "text": param
+        })
 
     payload = {
-        "to": to,
-        "type": "template",
-        "template": {
-            "name": template_name,
-            "language": {"policy": "deterministic", "code": "en"},
-            "components": [
-                {"type": "body", "parameters": body_params}
-            ]
+        "token": namespace and api_key or api_key,  # token field
+        "namespace": namespace,
+        "template": template_name,
+        "language": {
+            "policy": "deterministic",
+            "code": lang_code
         },
-        "messaging_product": "whatsapp"
+        "params": [
+            {
+                "type": "body",
+                "parameters": body_params
+            }
+        ],
+        "phone": to
     }
-    return send_message_json(payload)
 
+    response = requests.post(url, headers=headers, json=payload)
+    print(f"[DEBUG] send_template_message → {response.status_code}, {response.text}")
+    return response.json()
 
-# ——————————————  
-# 6) Stubbed Redis “state” helpers
-# ——————————————
-def get_user_state(flow: str, user: str) -> dict:
-    """
-    Placeholder: fetch user state from Redis (or wherever).
-    """
-    return {}
+# -------------------------------------------------------------------
+# In‐memory user state store (unchanged).
+# You can replace with Redis if desired in future.
+# -------------------------------------------------------------------
+_user_states = {
+    "car": {},
+    "bedbug": {},
+    "mold": {}
+}
 
+def get_user_state(flow_name, phone_number):
+    return _user_states.get(flow_name, {}).get(phone_number)
 
-def set_user_state(flow: str, user: str, state: dict) -> None:
-    """
-    Placeholder: store user state in Redis (or wherever).
-    """
-    pass
+def set_user_state(flow_name, phone_number, state_obj):
+    _user_states.setdefault(flow_name, {})[phone_number] = state_obj
 
-
-def clear_user_state(flow: str, user: str) -> None:
-    """
-    Placeholder: delete user state from Redis (or wherever).
-    """
-    pass
+def clear_user_state(flow_name, phone_number):
+    if phone_number in _user_states.get(flow_name, {}):
+        del _user_states[flow_name][phone_number]
+# end helpers.py

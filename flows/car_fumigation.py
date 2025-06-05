@@ -15,16 +15,16 @@ from helpers import (
 
 # ─── Internal alert numbers (without "+" or spaces) ───
 ALERT_NUMBERS = [
-    "6588662359",  # Bot number +65 88662359
-    "6587788080",  # Company number +65 87788080
-    "6580681688",  # Sales in charge +65 80681688
+    "6588662359",  # Bot number +65 8866 2359
+    "6587788080",  # Company number +65 8778 8080
+    "6580681688",  # Sales in charge +65 8068 1688
 ]
 
 # ================================================================================ 
 # 1) Main Menu (Template)
 #
-#    Called when user taps “Need help on Pest!” or if “reset” button re-sends main menu.
-#    Uses the WhatsApp template named "main_menu_v2" (one placeholder for “greeting name”).
+#    If at any point you need to go back to the very first screen, you can call this.
+#    It uses the WhatsApp template named "main_menu_v2" (one placeholder: greeting name).
 # ================================================================================ 
 def send_main_menu(to: str, phone_number_id: str):
     greeting_name = "there"
@@ -37,7 +37,7 @@ def send_main_menu(to: str, phone_number_id: str):
 
 
 # ================================================================================ 
-# 2) Pest Control Services → Interactive “List” of common pest issues
+# 2) Pest Control Services → “List” of common pest issues
 # ================================================================================ 
 def send_pest_control_list(to: str, phone_number_id: str):
     payload = {
@@ -102,7 +102,7 @@ def send_pest_control_list(to: str, phone_number_id: str):
 
 # ================================================================================ 
 # 3) Car Fumigation Menu → Template “car_fum_menu”
-#    (Shown once user has selected “Car Fumigation 🚗” from the pest control list)
+#    (Triggered after the user taps “Car Fumigation 🚗” in the Pest Control list.)
 # ================================================================================ 
 def send_car_fum_menu(to: str, phone_number_id: str):
     resp = send_template_message(
@@ -114,8 +114,9 @@ def send_car_fum_menu(to: str, phone_number_id: str):
 
 
 # ================================================================================ 
-# 4) Car Fumigation Info / Quote Options → Template “car_fum_quote_options”
-#    (Shown after the user has tapped “Car Fumigation” main menu button)
+# 4) Car Fumigation “Quote Options” → Template “car_fum_quote_options”
+#    (If you ever need to send this separate template; not used in the default flow shown here,
+#     but kept for completeness in case you want a separate screen for “Request a Quote” vs “FAQ”.)
 # ================================================================================ 
 def send_car_fum_quote_options(to: str, phone_number_id: str):
     resp = send_template_message(
@@ -123,11 +124,11 @@ def send_car_fum_quote_options(to: str, phone_number_id: str):
         template_name="car_fum_quote_options",
         template_params=[]
     )
-    print(f"[DEBUG] send_car_fum_quote_options → 1msg response: {resp}")
+    print(f"[DEBUG] send_car_fum_quote_options → {resp}")
 
 
 # ================================================================================ 
-# 5) “Select Pest Type” → Interactive List of pest categories (Cockroach, Ants, etc.)
+# 5) “Select Pest Type” → Interactive List of pest categories (Cockroaches, Ants, etc.)
 # ================================================================================ 
 def send_pest_type_list(to: str, phone_number_id: str):
     payload = {
@@ -251,7 +252,7 @@ def send_cfadditionalfee_prompt(to: str, phone_number_id: str):
         }
     }
     resp = send_interactive_message(payload)
-    print(f"[DEBUG] send_cfadditionalfee_prompt → 1msg response: {resp}")
+    print(f"[DEBUG] send_cfadditionalfee_prompt → {resp}")
 
 
 # ================================================================================ 
@@ -300,7 +301,7 @@ def send_upcoming_dates_list(to: str, phone_number_id: str):
         }
     }
     resp = send_interactive_message(payload)
-    print(f"[DEBUG] send_upcoming_dates_list → 1msg response: {resp}")
+    print(f"[DEBUG] send_upcoming_dates_list → {resp}")
 
 
 # ================================================================================ 
@@ -561,29 +562,18 @@ def handle_car_fumigation_flow(to: str, message: dict, api_key: str, base_url: s
     """
     # Retrieve in-memory state for this phone number
     state = get_user_state("car", to) or {}
-
     msg_type = message.get("type", "")
 
     # ── Step 1: User tapped “Need help on Pest!” ──
     if msg_type == "button" and message.get("body", "").strip().lower() == "need help on pest!" and not state:
-        # Render the “Main Menu” template
-        state["step"] = "main_menu_sent"
-        set_user_state("car", to, state)
-        send_main_menu(to, to)
-        return Response(status=200)
-
-    # ── Step 2: After main menu is sent, show “Pest Control Services” list ──
-    if state.get("step") in ("main_menu_sent", ""):
+        # Instead of sending main_menu_v2, we immediately send the Pest Control list:
         state["step"] = "pest_control_list"
         set_user_state("car", to, state)
         send_pest_control_list(to, to)
         return Response(status=200)
 
-    # ── Step 3: User selected “car_fumigation” from the pest list ──
-    #
-    #  Note: we now pull from message.get("list_reply") directly (1msg no longer nests
-    #  list_reply under message["interactive"]).
-    #
+    # ── Step 2: After we set step="pest_control_list", user’s next interaction should be
+    #            the “car_fumigation” selection from that list ──
     if (
         msg_type == "interactive"
         and message.get("list_reply", {}).get("id") == "car_fumigation"
@@ -594,13 +584,11 @@ def handle_car_fumigation_flow(to: str, message: dict, api_key: str, base_url: s
         send_car_fum_menu(to, to)
         return Response(status=200)
 
-    # ── Step 4: In the “car_fum_menu” template, user tapped one of the three buttons ──
+    # ── Step 3: In the “car_fum_menu” template, user tapped one of the three buttons ──
     if msg_type == "button" and state.get("step") == "car_fum_menu":
-        # Again, 1msg puts the tapped-button text into message["body"]
         payload_text = message.get("body", "").strip().lower()
 
         if payload_text == "book appointment":
-            # Move to “Select Pest Type” list
             state["step"] = "select_pest_type"
             set_user_state("car", to, state)
             send_pest_type_list(to, to)
@@ -613,18 +601,17 @@ def handle_car_fumigation_flow(to: str, message: dict, api_key: str, base_url: s
             return Response(status=200)
 
         elif payload_text == "return to main menu":
-            # Reset state and return to main menu
             clear_user_state("car", to)
             send_main_menu(to, to)
             return Response(status=200)
 
-    # ── Step 5: User tapped an FAQ row (msg_type == "interactive" & step=="fumigation_faq") ──
+    # ── Step 4: User tapped an FAQ row (msg_type=="interactive" & step=="fumigation_faq") ──
     if msg_type == "interactive" and state.get("step") == "fumigation_faq":
         faq_id = message.get("list_reply", {}).get("id")
         process_car_fumigation_faq_response(to, faq_id)
         return Response(status=200)
 
-    # ── Step 6: User selected “Book Now” and is now choosing pest type ──
+    # ── Step 5: User selected “Book Now” and is now choosing pest type ──
     if msg_type == "interactive" and state.get("step") == "select_pest_type":
         pest_choice = message.get("list_reply", {}).get("id")
         state["pest_type"] = pest_choice
@@ -633,7 +620,7 @@ def handle_car_fumigation_flow(to: str, message: dict, api_key: str, base_url: s
         send_vehicle_type_list(to, to)
         return Response(status=200)
 
-    # ── Step 7: User selected a vehicle type ──
+    # ── Step 6: User selected a vehicle type ──
     if msg_type == "interactive" and state.get("step") == "select_vehicle_type":
         vehicle_choice = message.get("list_reply", {}).get("id")
         state["vehicle"] = vehicle_choice
@@ -653,7 +640,7 @@ def handle_car_fumigation_flow(to: str, message: dict, api_key: str, base_url: s
         send_cfadditionalfee_prompt(to, to)
         return Response(status=200)
 
-    # ── Step 8: User answered “Yes” / “No” to “Additional Care Fee” ──
+    # ── Step 7: User answered “Yes” / “No” to “Additional Care Fee” ──
     if msg_type == "button" and state.get("step") == "ask_luxury_brand":
         payload_id = message.get("body", "").strip().lower()
         if payload_id == "yes":
@@ -665,7 +652,7 @@ def handle_car_fumigation_flow(to: str, message: dict, api_key: str, base_url: s
         send_upcoming_dates_list(to, to)
         return Response(status=200)
 
-    # ── Step 9: User tapped a date from the “Upcoming Dates” list ──
+    # ── Step 8: User tapped a date from the “Upcoming Dates” list ──
     if msg_type == "interactive" and state.get("step") == "select_date":
         date_id = message.get("list_reply", {}).get("id")
 
@@ -684,17 +671,16 @@ def handle_car_fumigation_flow(to: str, message: dict, api_key: str, base_url: s
             })
             return Response(status=200)
         else:
-            # date_id will be like "date_12-06-2025"
-            chosen_date = date_id.split("_", 1)[1]  # e.g. "12-06-2025"
+            # date_id comes through like "date_12-06-2025"
+            chosen_date = date_id.split("_", 1)[1]  # "12-06-2025"
             state["step"] = "select_time"
             set_user_state("car", to, state)
             send_time_selection_prompt(to, to, chosen_date)
             return Response(status=200)
 
-    # ── Step 10: User manually typed a date (msg_type == "text" & step=="await_manual_date") ──
+    # ── Step 9: User manually typed a date (msg_type=="text" & step=="await_manual_date") ──
     if msg_type == "text" and state.get("step") == "await_manual_date":
         user_date = message["text"]["body"].strip()
-        # Basic validation: check DD-MM-YYYY
         try:
             datetime.strptime(user_date, "%d-%m-%Y")
             state["step"] = "select_time"
@@ -711,10 +697,9 @@ def handle_car_fumigation_flow(to: str, message: dict, api_key: str, base_url: s
             })
         return Response(status=200)
 
-    # ── Step 11: User tapped “Morning” / “Afternoon” / “Evening” ──
+    # ── Step 10: User tapped “Morning” / “Afternoon” / “Evening” ──
     if msg_type == "button" and state.get("step") == "select_time":
         payload_id = message.get("body", "").strip().lower()
-        # Map payload_id to actual time slot
         if payload_id == "time morning":
             chosen_time = "10:00 - 12:00"
         elif payload_id == "time afternoon":
@@ -743,7 +728,7 @@ def handle_car_fumigation_flow(to: str, message: dict, api_key: str, base_url: s
         })
         return Response(status=200)
 
-    # ── Step 12: User replies with “Vehicle Model, Vehicle Number, On-site Location” ──
+    # ── Step 11: User replies with “Vehicle Model, Vehicle Number, On-site Location” ──
     if msg_type == "text" and state.get("step") == "collect_final_details":
         parts = [p.strip() for p in message["text"]["body"].split(",")]
         if len(parts) != 3:
@@ -771,16 +756,13 @@ def handle_car_fumigation_flow(to: str, message: dict, api_key: str, base_url: s
         state["vehicle_number"]  = vehicle_number
         state["parking_address"] = parking_address
 
-        # Fetch needed fields from state
         pest_encountered = state.get("pest_type", "N/A")
         total_quote      = state.get("computed_quote", "N/A")
         appointment_date = state.get("appointment_date", "")
         appointment_time = state.get("appointment_time", "")
 
-        # Clear in-memory state now that we have everything
         clear_user_state("car", to)
 
-        # Send a “Thank you / confirmation” text summarizing everything
         confirmation_text = (
             "Thank you! Your appointment request has been received.\n\n"
             "Details provided:\n\n"
@@ -800,14 +782,14 @@ def handle_car_fumigation_flow(to: str, message: dict, api_key: str, base_url: s
             "text": {"body": confirmation_text}
         })
 
-        # Finally, show the FAQ in case they have last-minute questions
         send_car_fumigation_faq(to, to)
         return Response(status=200)
 
     # ───────────────────────────────────────────────────────────────────────
-    # If we reach here, the message didn’t match any expected step.
-    # Reset state and send main menu again.
+    # Fallback: If we reach here, it means no step matched. Reset state & go back 
+    # to the very first “main menu” template.
     # ───────────────────────────────────────────────────────────────────────
     clear_user_state("car", to)
     send_main_menu(to, to)
     return Response(status=200)
+

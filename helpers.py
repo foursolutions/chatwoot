@@ -1,194 +1,122 @@
-# dispatcher.py
+# helpers.py
 
 import os
 import json
-from flask import Flask, request, Response
+import requests
 
-from helpers import (
-    send_text_message,
-    send_interactive_message,
-    send_template_message,
-    get_user_state,
-    set_user_state,
-    clear_user_state
-)
-from flows.car_fumigation import handle_car_fumigation_flow
-from flows.bedbug import handle_bedbug_flow
-from flows.mold import handle_mold_flow
+# -----------------------------------------------------------------------------
+# This file contains three kinds of helper functions:
+#   • send_text_message(...)
+#   • send_template_message(...)
+#   • clear/set/get user state (via Redis)
+# -----------------------------------------------------------------------------
 
-app = Flask(__name__)
-
-VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN", "")
-API_KEY      = os.environ.get("1MSG_API_KEY", "")
-BASE_URL     = os.environ.get("1MSG_BASE_URL", "")  # e.g. https://api.1msg.io/VAN123456
-
-# ----------------------------------------------------------------------------
-# Webhook Verification (GET)
-# ----------------------------------------------------------------------------
-@app.route("/webhook", methods=["GET"])
-def verify():
-    # 1msg / WhatsApp handshake for GET verification
-    mode      = request.args.get("hub.mode")
-    token     = request.args.get("hub.verify_token")
-    challenge = request.args.get("hub.challenge")
-    if mode and token and mode == "subscribe" and token == VERIFY_TOKEN:
-        return challenge, 200
-    return "Verification token mismatch", 403
-
-# ----------------------------------------------------------------------------
-# Main Webhook Endpoint (POST)
-# ----------------------------------------------------------------------------
-@app.route("/webhook", methods=["POST"])
-def receive_message():
-    payload = request.get_json(force=True)
-    # Debug: log the raw incoming JSON
-    print(">>>> RAW INCOMING JSON:", json.dumps(payload, indent=2))
-
-    # Facebook/WhatsApp-style wrapper: “entry” → “changes” → “value” → “messages”
-    entry   = payload.get("entry", [{}])[0]
-    changes = entry.get("changes", [{}])[0]
-    value   = changes.get("value", {})
-    messages = value.get("messages", [])
-
-    if not messages:
-        # No user‐sent message → ignore
-        return Response(status=200)
-
-    message    = messages[0]
-    raw_from   = message.get("from", "")
-    from_number = raw_from.split("@")[0] if "@" in raw_from else raw_from
-    msg_type   = message.get("type", "")
-    text_body  = ""
-
-    if msg_type == "text":
-        text_body = message["text"]["body"].strip().lower()
-
-    # --------------------------------------------------------
-    # If user types “reset” (plain text), clear all states and send main menu again
-    # --------------------------------------------------------
-    if msg_type == "text" and text_body == "reset":
-        clear_user_state("car", from_number)
-        clear_user_state("bedbug", from_number)
-        clear_user_state("mold", from_number)
-
-        # Build the interactive button menu “Main Menu”
-        interactive_payload = {
-            "to": from_number,
-            "type": "interactive",
-            "messaging_product": "whatsapp",
-            "interactive": {
-                "type": "button",
-                "body": {
-                    "text": (
-                        "Hi there, thanks for reaching out to Four Solutions! "
-                        "I'm Solvia, your fun and friendly chatbot.\n"
-                        "How may I help you today? (Tap \"Live Human\" anytime, "
-                        "or choose one of the options below.)"
-                    )
-                },
-                "action": {
-                    "buttons": [
-                        {
-                            "type": "reply",
-                            "reply": {
-                                "id": "help_pest",
-                                "title": "Need help on Pest!"
-                            }
-                        },
-                        {
-                            "type": "reply",
-                            "reply": {
-                                "id": "help_mold",
-                                "title": "Need help on Mold!"
-                            }
-                        },
-                        {
-                            "type": "reply",
-                            "reply": {
-                                "id": "live_human",
-                                "title": "Live Human"
-                            }
-                        }
-                    ]
-                }
-            }
-        }
-        send_interactive_message(interactive_payload)
-        return Response(status=200)
-
-    # --------------------------------------------------------
-    # If user taps an interactive button (“help_pest”, “help_mold”, “live_human”), msg_type == "button"
-    # --------------------------------------------------------
-    if msg_type == "button":
-        button_payload = message["button"]["payload"]  # e.g. "help_pest" or "help_mold" or "live_human"
-
-        # If user tapped “Need help on Pest!”, route into the Car Fumigation flow
-        if button_payload == "help_pest":
-            return handle_car_fumigation_flow(from_number, message, API_KEY, BASE_URL)
-
-        # If user tapped “Need help on Mold!”, route into the Mold flow
-        elif button_payload == "help_mold":
-            return handle_mold_flow(from_number, message, API_KEY, BASE_URL)
-
-        # If user tapped “Live Human”, simply send a notice or handoff to agent
-        elif button_payload == "live_human":
-            send_text_message({
-                "to": from_number,
-                "type": "text",
-                "messaging_product": "whatsapp",
-                "text": {
-                    "body": (
-                        "Connecting you to a live agent now. Please hold on..."
-                    )
-                }
-            })
-            return Response(status=200)
-
-    # --------------------------------------------------------
-    # If user selects from an interactive “List” (e.g. pest type, date, etc.), msg_type == "interactive"
-    # The payload for lists also uses message["interactive"]["list_reply"]["id"]
-    # We dispatch to the appropriate flow based on state.
-    # --------------------------------------------------------
-    if msg_type == "interactive":
-        interactive_obj = message["interactive"]
-        # “list_reply” is used for single‐select lists
-        if interactive_obj.get("list_reply"):
-            list_id = interactive_obj["list_reply"]["id"]
-
-            # We need to know which flow the user is currently in.
-            # If car‐fumigation state exists, delegate to Car Fumigation flow
-            if get_user_state("car", from_number):
-                return handle_car_fumigation_flow(from_number, message, API_KEY, BASE_URL)
-
-            # Similarly for bedbug or mold
-            if get_user_state("bedbug", from_number):
-                return handle_bedbug_flow(from_number, message, API_KEY, BASE_URL)
-
-            if get_user_state("mold", from_number):
-                return handle_mold_flow(from_number, message, API_KEY, BASE_URL)
-
-            # If no state, check if this is the first service list selection
-            # (e.g. user tapped “Need help on Pest!” → Car Fumigation service list)
-            # In other words, we haven’t set any state yet → call handle_car_fumigation_flow
-            return handle_car_fumigation_flow(from_number, message, API_KEY, BASE_URL)
-
-    # --------------------------------------------------------
-    # Fallback: if text doesn’t match “reset” and isn’t an interactive button/list,
-    # send a “Please tap a button or type 'reset'” message
-    # --------------------------------------------------------
-    send_text_message({
-        "to": from_number,
+#
+# 1) TEXT‐ONLY MESSAGE
+#
+def send_text_message(to: str, text: str):
+    """
+    Send a plain "text" message over 1MSG.  For WhatsApp, text must be a simple string.
+    """
+    API_KEY    = os.environ["1MSG_API_KEY"]
+    BASE_URL   = os.environ["1MSG_BASE_URL"].rstrip("/")  # e.g. "https://api.1msg.io/VAN12345678"
+    PHONE_ID   = os.environ.get("PHONE_NUMBER_ID", None)   # (for WhatsApp business channel push)
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {API_KEY}"
+    }
+    payload = {
+        "token": API_KEY,
+        "to": to,
         "type": "text",
         "messaging_product": "whatsapp",
         "text": {
-            "body": "Sorry, I didn’t understand that. Please tap one of the menu buttons or type \"reset\" to start over."
+            "body": text
         }
-    })
-    return Response(status=200)
+    }
+    # If you also need phone_number_id in the 1MSG payload, you can add it here:
+    if PHONE_ID:
+        payload["phone_number_id"] = PHONE_ID
 
-# ----------------------------------------------------------------------------
-# If you ever want to run dispatcher.py locally:
-# ----------------------------------------------------------------------------
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    url = f"{BASE_URL}/messages"
+    resp = requests.post(url, headers=headers, json=payload)
+    # Debug log
+    print(f"[DEBUG] send_text_message → {resp.status_code}, {resp.text}")
+    return resp.json()
+
+
+#
+# 2) TEMPLATE MESSAGE (buttons, interactive, etc.)
+#
+def send_template_message(to: str, token: str, template_name: str, language: dict, params: list):
+    """
+    Send a template message via 1MSG.  We no longer pass `namespace` here as a separate keyword
+    (the 1MSG API already knows your namespace by virtue of the VAN ID in BASE_URL).
+    - `to`           : recipient phone (E.164 without '+', e.g. "6588601234")
+    - `token`        : same as 1MSG_API_KEY
+    - `template_name`: name of your template, e.g. "main_menu_v2"
+    - `language`     : {"policy": "deterministic", "code": "en"}
+    - `params`       : list of body/header/button parameters (JSON‐serializable)
+    """
+    BASE_URL = os.environ["1MSG_BASE_URL"].rstrip("/")  # e.g. "https://api.1msg.io/VAN388218473"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {token}"
+    }
+    payload = {
+        "token": token,
+        "template": template_name,
+        "language": language,
+        "params": params,
+        "phone": to
+    }
+
+    url = f"{BASE_URL}/sendTemplate"
+    resp = requests.post(url, headers=headers, json=payload)
+    print(f"[DEBUG] send_template_message → {resp.status_code}, {resp.text}")
+    return resp.json()
+
+
+#
+# 3) SIMPLE KEY‐VALUE STATE STORAGE (using Redis)
+#
+#    We store per‐user “state” under keys like "car:{from_number}".
+#    You can tweak these helpers if you use a different Redis library.
+#
+import redis
+
+# Parse Redis connection string from environment.  This might be something like
+#   REDIS_URL="redis://:<password>@<hostname>:<port>"
+# You already have REDIS_URL set in Heroku config.
+redis_conn = redis.from_url(os.environ.get("REDIS_URL", ""), decode_responses=True)
+
+
+def get_user_state(flow: str, user_id: str) -> dict:
+    """
+    Read a JSON blob from Redis under key "<flow>:<user_id>".
+    If nothing is set, returns {}.
+    """
+    key = f"{flow}:{user_id}"
+    data = redis_conn.get(key)
+    if not data:
+        return {}
+    try:
+        return json.loads(data)
+    except json.JSONDecodeError:
+        return {}
+
+
+def set_user_state(flow: str, user_id: str, new_state: dict):
+    """
+    Overwrite the JSON blob in Redis under key "<flow>:<user_id>".
+    """
+    key = f"{flow}:{user_id}"
+    redis_conn.set(key, json.dumps(new_state))
+
+
+def clear_user_state(flow: str, user_id: str):
+    """
+    Delete the Redis key "<flow>:<user_id>".
+    """
+    key = f"{flow}:{user_id}"
+    redis_conn.delete(key)

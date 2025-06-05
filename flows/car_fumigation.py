@@ -9,115 +9,53 @@ from helpers import (
     set_user_state,
     clear_user_state,
     send_template_message,
-    send_interactive_message,
+    send_list_message,
     send_text_message
 )
 
-# ─── Internal alert numbers (without "+" or spaces) ───
-ALERT_NUMBERS = [
-    "6588662359",  # Bot number +65 8866 2359
-    "6587788080",  # Company number +65 8778 8080
-    "6580681688",  # Sales in charge +65 8068 1688
-]
-
-# ================================================================================ 
-# 1) Main Menu (Template)
-#
-#    If at any point you need to go back to the very first screen, you can call this.
-#    It uses the WhatsApp template named "main_menu_v2" (one placeholder: greeting name).
-# ================================================================================ 
+# ────────────────────────────────────────────────────────────────────────────────
+# 1) Main Menu (Template) — if the user needs to return to the very first screen.
+# ────────────────────────────────────────────────────────────────────────────────
 def send_main_menu(to: str, phone_number_id: str):
+    """
+    Calls the WhatsApp template 'main_menu_v2', with one placeholder ("there").
+    """
     greeting_name = "there"
     resp = send_template_message(
         to=to,
         template_name="main_menu_v2",
         template_params=[greeting_name]
     )
-    print(f"[DEBUG] send_main_menu → 1msg response: {resp}")
+    print(f"[DEBUG] send_main_menu → {resp}")
 
 
-# ================================================================================ 
-# 2) Pest Control Services → “List” of common pest issues
-# ================================================================================ 
+# ────────────────────────────────────────────────────────────────────────────────
+# 2) Pest Control Services → Now calls send_list_message (approved List Template)
+# ────────────────────────────────────────────────────────────────────────────────
 def send_pest_control_list(to: str, phone_number_id: str):
-    payload = {
-        "to": to,
-        "type": "interactive",
-        "messaging_product": "whatsapp",
-        "interactive": {
-            "type": "list",
-            "header": {"type": "text", "text": "Pest Control Services"},
-            "body": {"text": "Please select the pest control service you need assistance with:"},
-            "footer": {"text": "Tap to choose"},
-            "action": {
-                "button": "Select Service",
-                "sections": [
-                    {
-                        "title": "Common Pest Issues",
-                        "rows": [
-                            {
-                                "id": "car_fumigation",
-                                "title": "Car Fumigation 🚗",
-                                "description": "On-site fumigation & fogging"
-                            },
-                            {
-                                "id": "bedbugs",
-                                "title": "Bed Bugs 🛏️",
-                                "description": "Elimination of bed bugs"
-                            },
-                            {
-                                "id": "booklice",
-                                "title": "Booklice 📚",
-                                "description": "Treatment for booklice"
-                            },
-                            {
-                                "id": "roaches_ants",
-                                "title": "Roaches & Ants 🐜",
-                                "description": "General pest control"
-                            },
-                            {
-                                "id": "bees_wasps",
-                                "title": "Bees/Wasps 🐝",
-                                "description": "Removal of nests"
-                            },
-                            {
-                                "id": "commercial_pest",
-                                "title": "Commercial Pest 🏢",
-                                "description": "Services for offices"
-                            },
-                            {
-                                "id": "other_pest_issues",
-                                "title": "Other Pest Issues 🕷️",
-                                "description": "Other pest problems"
-                            }
-                        ]
-                    }
-                ]
-            }
-        }
-    }
-    resp = send_interactive_message(payload)
-    print(f"[DEBUG] send_pest_control_list → 1msg response: {resp}")
+    """
+    Instead of a free-form interactive payload, we invoke the /sendList helper.
+    """
+    # 'to' must be the full chatId: "6587788080@c.us"
+    resp = send_list_message(to)
+    print(f"[DEBUG] send_pest_control_list → {resp}")
 
 
-# ================================================================================ 
+# ────────────────────────────────────────────────────────────────────────────────
 # 3) Car Fumigation Menu → Template “car_fum_menu”
-#    (Triggered after the user taps “Car Fumigation 🚗” in the Pest Control list.)
-# ================================================================================ 
+# ────────────────────────────────────────────────────────────────────────────────
 def send_car_fum_menu(to: str, phone_number_id: str):
     resp = send_template_message(
         to=to,
         template_name="car_fum_menu",
         template_params=[]
     )
-    print(f"[DEBUG] send_car_fum_menu → 1msg response: {resp}")
+    print(f"[DEBUG] send_car_fum_menu → {resp}")
 
 
-# ================================================================================ 
-# 4) Car Fumigation “Quote Options” → Template “car_fum_quote_options”
-#    (If you ever need to send this separate template; not used in the default flow shown here,
-#     but kept for completeness in case you want a separate screen for “Request a Quote” vs “FAQ”.)
-# ================================================================================ 
+# ────────────────────────────────────────────────────────────────────────────────
+# 4) Car Fumigation “Quote Options” (unused in most flows; kept for completeness)
+# ────────────────────────────────────────────────────────────────────────────────
 def send_car_fum_quote_options(to: str, phone_number_id: str):
     resp = send_template_message(
         to=to,
@@ -127,9 +65,9 @@ def send_car_fum_quote_options(to: str, phone_number_id: str):
     print(f"[DEBUG] send_car_fum_quote_options → {resp}")
 
 
-# ================================================================================ 
-# 5) “Select Pest Type” → Interactive List of pest categories (Cockroaches, Ants, etc.)
-# ================================================================================ 
+# ────────────────────────────────────────────────────────────────────────────────
+# 5) “Select Pest Type” → Interactive List (still free-form; two-level interaction is allowed)
+# ────────────────────────────────────────────────────────────────────────────────
 def send_pest_type_list(to: str, phone_number_id: str):
     payload = {
         "to": to,
@@ -137,19 +75,19 @@ def send_pest_type_list(to: str, phone_number_id: str):
         "messaging_product": "whatsapp",
         "interactive": {
             "type": "list",
-            "header": {"type": "text", "text": "Select Pest Type"},
-            "body": {"text": "Which pest are you seeing inside your vehicle?"},
-            "footer": {"text": "Tap to choose"},
+            "header": { "type": "text", "text": "Select Pest Type" },
+            "body":   { "text": "Which pest are you seeing inside your vehicle?" },
+            "footer": { "text": "Tap to choose" },
             "action": {
                 "button": "Select Pest Type",
                 "sections": [
                     {
                         "title": "Vehicle Pest Types",
                         "rows": [
-                            {"id": "cockroach",   "title": "Cockroaches 🪳", "description": ""},
-                            {"id": "ants",        "title": "Ants 🐜",        "description": ""},
-                            {"id": "lizards",     "title": "Lizards 🦎",     "description": ""},
-                            {"id": "other_pest",  "title": "Other Pest 🕷️", "description": ""}
+                            { "id": "cockroach",  "title": "Cockroaches 🪳",  "description": "" },
+                            { "id": "ants",       "title": "Ants 🐜",         "description": "" },
+                            { "id": "lizards",    "title": "Lizards 🦎",      "description": "" },
+                            { "id": "other_pest", "title": "Other Pest 🕷️",   "description": "" }
                         ]
                     }
                 ]
@@ -157,12 +95,12 @@ def send_pest_type_list(to: str, phone_number_id: str):
         }
     }
     resp = send_interactive_message(payload)
-    print(f"[DEBUG] send_pest_type_list → 1msg response: {resp}")
+    print(f"[DEBUG] send_pest_type_list → {resp}")
 
 
-# ================================================================================ 
-# 6) “Select Vehicle Type” → Interactive List of vehicle categories (Sedan, SUV, etc.)
-# ================================================================================ 
+# ────────────────────────────────────────────────────────────────────────────────
+# 6) “Select Vehicle Type” List
+# ────────────────────────────────────────────────────────────────────────────────
 def send_vehicle_type_list(to: str, phone_number_id: str):
     payload = {
         "to": to,
@@ -170,45 +108,21 @@ def send_vehicle_type_list(to: str, phone_number_id: str):
         "messaging_product": "whatsapp",
         "interactive": {
             "type": "list",
-            "header": {"type": "text", "text": "Select Vehicle Type"},
-            "body": {"text": "What type of vehicle do you drive?"},
-            "footer": {"text": "Tap to choose"},
+            "header": { "type": "text", "text": "Select Vehicle Type" },
+            "body":   { "text": "What type of vehicle do you drive?" },
+            "footer": { "text": "Tap to choose" },
             "action": {
                 "button": "Select Vehicle Type",
                 "sections": [
                     {
                         "title": "Vehicle Types",
                         "rows": [
-                            {
-                                "id": "vehicle_sedan",
-                                "title": "Sedan/Hatchback",
-                                "description": "Standard cars"
-                            },
-                            {
-                                "id": "vehicle_suv",
-                                "title": "SUV",
-                                "description": "Sport Utility Vehicle"
-                            },
-                            {
-                                "id": "vehicle_mpv",
-                                "title": "MPV",
-                                "description": "Multi-Purpose Vehicle"
-                            },
-                            {
-                                "id": "vehicle_vans",
-                                "title": "Vans/Lorries",
-                                "description": "Commercial vehicles"
-                            },
-                            {
-                                "id": "vehicle_ultra_luxury",
-                                "title": "Super/Luxury Cars",
-                                "description": "e.g. Bentley, Ferrari, etc."
-                            },
-                            {
-                                "id": "vehicle_others",
-                                "title": "Others",
-                                "description": "Other vehicle types"
-                            }
+                            { "id": "vehicle_sedan",     "title": "Sedan/Hatchback",     "description": "Standard cars" },
+                            { "id": "vehicle_suv",       "title": "SUV",                  "description": "Sport Utility Vehicle" },
+                            { "id": "vehicle_mpv",       "title": "MPV",                  "description": "Multi-Purpose Vehicle" },
+                            { "id": "vehicle_vans",      "title": "Vans/Lorries",         "description": "Commercial vehicles" },
+                            { "id": "vehicle_ultra_luxury", "title": "Super/Luxury Cars", "description": "e.g. Bentley, Ferrari, etc." },
+                            { "id": "vehicle_others",    "title": "Others",               "description": "Other vehicle types" }
                         ]
                     }
                 ]
@@ -216,12 +130,12 @@ def send_vehicle_type_list(to: str, phone_number_id: str):
         }
     }
     resp = send_interactive_message(payload)
-    print(f"[DEBUG] send_vehicle_type_list → 1msg response: {resp}")
+    print(f"[DEBUG] send_vehicle_type_list → {resp}")
 
 
-# ================================================================================ 
-# 7) “Additional Care Fee” → Interactive Buttons (“Yes” / “No”) for Luxury Brand
-# ================================================================================ 
+# ────────────────────────────────────────────────────────────────────────────────
+# 7) “Additional Care Fee” → Interactive Buttons (Yes / No)
+# ────────────────────────────────────────────────────────────────────────────────
 def send_cfadditionalfee_prompt(to: str, phone_number_id: str):
     text = (
         "Does your vehicle belong to any of these brands?\n\n"
@@ -242,11 +156,11 @@ def send_cfadditionalfee_prompt(to: str, phone_number_id: str):
         "messaging_product": "whatsapp",
         "interactive": {
             "type": "button",
-            "body": {"text": text},
+            "body": { "text": text },
             "action": {
                 "buttons": [
-                    {"type": "reply", "reply": {"id": "luxury_yes", "title": "Yes"}},
-                    {"type": "reply", "reply": {"id": "luxury_no",  "title": "No"}}
+                    { "type": "reply", "reply": { "id": "luxury_yes", "title": "Yes" } },
+                    { "type": "reply", "reply": { "id": "luxury_no",  "title": "No"  } }
                 ]
             }
         }
@@ -255,18 +169,19 @@ def send_cfadditionalfee_prompt(to: str, phone_number_id: str):
     print(f"[DEBUG] send_cfadditionalfee_prompt → {resp}")
 
 
-# ================================================================================ 
-# 8) “Date Selection” → Interactive List of the next 7 dates (plus “Other dates”)
-# ================================================================================ 
+# ────────────────────────────────────────────────────────────────────────────────
+# 8) “Date Selection” → List of next 7 dates + “Other dates”
+# ────────────────────────────────────────────────────────────────────────────────
 def send_upcoming_dates_list(to: str, phone_number_id: str):
     today = datetime.now()
-    base_day = today + timedelta(days=2)  # Start two days from now
+    base_day = today + timedelta(days=2)
     rows = []
+
     for i in range(7):
         date_obj = base_day + timedelta(days=i)
         date_str = date_obj.strftime("%d-%m-%Y")
-        weekday = date_obj.strftime("%A")
-        title = f"{date_str}, {weekday}"
+        weekday  = date_obj.strftime("%A")
+        title    = f"{date_str}, {weekday}"
         rows.append({
             "id": f"date_{date_str}",
             "title": title,
@@ -286,9 +201,9 @@ def send_upcoming_dates_list(to: str, phone_number_id: str):
         "messaging_product": "whatsapp",
         "interactive": {
             "type": "list",
-            "header": {"type": "text", "text": "Choose a Date"},
-            "body": {"text": "Please select one of the following dates:"},
-            "footer": {"text": "Tap to choose"},
+            "header": { "type": "text", "text": "Choose a Date" },
+            "body":   { "text": "Please select one of the following dates:" },
+            "footer": { "text": "Tap to choose" },
             "action": {
                 "button": "Select Date",
                 "sections": [
@@ -304,9 +219,9 @@ def send_upcoming_dates_list(to: str, phone_number_id: str):
     print(f"[DEBUG] send_upcoming_dates_list → {resp}")
 
 
-# ================================================================================ 
+# ────────────────────────────────────────────────────────────────────────────────
 # 9) “Which Time?” → Interactive Buttons (Morning / Afternoon / Evening)
-# ================================================================================ 
+# ────────────────────────────────────────────────────────────────────────────────
 def send_time_selection_prompt(to: str, phone_number_id: str, chosen_date: str):
     state = get_user_state("car", to) or {}
     state["appointment_date"] = chosen_date
@@ -333,12 +248,12 @@ def send_time_selection_prompt(to: str, phone_number_id: str, chosen_date: str):
         "messaging_product": "whatsapp",
         "interactive": {
             "type": "button",
-            "body": {"text": text},
+            "body": { "text": text },
             "action": {
                 "buttons": [
-                    {"type": "reply", "reply": {"id": "time_morning",   "title": "Morning"}},
-                    {"type": "reply", "reply": {"id": "time_afternoon", "title": "Afternoon"}},
-                    {"type": "reply", "reply": {"id": "time_evening",   "title": "Evening"}}
+                    { "type": "reply", "reply": { "id": "time_morning",   "title": "Morning"   } },
+                    { "type": "reply", "reply": { "id": "time_afternoon", "title": "Afternoon" } },
+                    { "type": "reply", "reply": { "id": "time_evening",   "title": "Evening"   } }
                 ]
             }
         }
@@ -347,13 +262,12 @@ def send_time_selection_prompt(to: str, phone_number_id: str, chosen_date: str):
     print(f"[DEBUG] send_time_selection_prompt → {resp}")
 
 
-# ================================================================================ 
+# ────────────────────────────────────────────────────────────────────────────────
 # 10) “Quote Summary” → Interactive Buttons (Book Now / FAQ / Return to Main Menu)
-# ================================================================================ 
+# ────────────────────────────────────────────────────────────────────────────────
 def send_quote_summary(to: str, phone_number_id: str):
     state = get_user_state("car", to) or {}
 
-    # If user selected a “manual quote” (ultra-luxury or others), show a “Require agent to quote” summary
     if state.get("manual_quote", False):
         summary_text = (
             "On-Site Car Fumigation Quotation\n\n"
@@ -366,7 +280,6 @@ def send_quote_summary(to: str, phone_number_id: str):
             "Please select an option below:"
         )
     else:
-        # Compute base, care fee, and location charge
         vehicle = state.get("vehicle", "")
         if vehicle == "vehicle_sedan":
             base_quote = 140
@@ -412,21 +325,12 @@ def send_quote_summary(to: str, phone_number_id: str):
         "messaging_product": "whatsapp",
         "interactive": {
             "type": "button",
-            "body": {"text": summary_text},
+            "body": { "text": summary_text },
             "action": {
                 "buttons": [
-                    {
-                        "type": "reply",
-                        "reply": {"id": "book_appointment", "title": "Book Now"}
-                    },
-                    {
-                        "type": "reply",
-                        "reply": {"id": "fumigation_faq",   "title": "More Info on Service"}
-                    },
-                    {
-                        "type": "reply",
-                        "reply": {"id": "return_main_menu", "title": "Return to Main Menu"}
-                    }
+                    { "type": "reply", "reply": { "id": "book_appointment", "title": "Book Now" } },
+                    { "type": "reply", "reply": { "id": "fumigation_faq",   "title": "More Info on Service" } },
+                    { "type": "reply", "reply": { "id": "return_main_menu", "title": "Return to Main Menu" } }
                 ]
             }
         }
@@ -435,9 +339,9 @@ def send_quote_summary(to: str, phone_number_id: str):
     print(f"[DEBUG] send_quote_summary → {resp}")
 
 
-# ================================================================================ 
+# ────────────────────────────────────────────────────────────────────────────────
 # 11) Car Fumigation FAQ → Interactive List of FAQs
-# ================================================================================ 
+# ────────────────────────────────────────────────────────────────────────────────
 def send_car_fumigation_faq(to: str, phone_number_id: str):
     payload = {
         "to": to,
@@ -445,9 +349,9 @@ def send_car_fumigation_faq(to: str, phone_number_id: str):
         "messaging_product": "whatsapp",
         "interactive": {
             "type": "list",
-            "header": {"type": "text", "text": "Car Fumigation FAQ"},
-            "body": {"text": "Select a FAQ question:"},
-            "footer": {"text": "Tap an option"},
+            "header": { "type": "text", "text": "Car Fumigation FAQ" },
+            "body":   { "text": "Select a FAQ question:" },
+            "footer": { "text": "Tap an option" },
             "action": {
                 "button": "Select FAQ",
                 "sections": [
@@ -494,9 +398,9 @@ def send_car_fumigation_faq(to: str, phone_number_id: str):
     print(f"[DEBUG] send_car_fumigation_faq → {resp}")
 
 
-# ================================================================================ 
+# ────────────────────────────────────────────────────────────────────────────────
 # 12) Process FAQ Response → Sends back the selected FAQ answer
-# ================================================================================ 
+# ────────────────────────────────────────────────────────────────────────────────
 def process_car_fumigation_faq_response(to: str, faq_id: str):
     faq_answers = {
         "cfq_safe": (
@@ -544,36 +448,31 @@ def process_car_fumigation_faq_response(to: str, faq_id: str):
         "to": to,
         "type": "text",
         "messaging_product": "whatsapp",
-        "text": {"body": answer_text}
+        "text": { "body": answer_text }
     })
 
 
-# ================================================================================ 
-# 13) The “handle_car_fumigation_flow” function routes through each step of the flow
-#     based on state["step"]. 
-#     **Now uses `to` for every send_xxx call instead of `message["from"]`.**
-# ================================================================================ 
+# ────────────────────────────────────────────────────────────────────────────────
+# 13) handle_car_fumigation_flow: Routes through each step based on state["step"]
+# ────────────────────────────────────────────────────────────────────────────────
 def handle_car_fumigation_flow(to: str, message: dict, api_key: str, base_url: str):
     """
-    Main car fumigation flow dispatcher, called whenever:
-      • user taps “Need help on Pest!”
-      • user selects “car_fumigation” from the pest control list (msg_type="interactive")
-      • any subsequent interaction within the car fumigation flow
+    to: the full chatId (e.g. '6587788080@c.us')
+    message: the raw incoming JSON for this step
     """
-    # Retrieve in-memory state for this phone number
     state = get_user_state("car", to) or {}
     msg_type = message.get("type", "")
 
     # ── Step 1: User tapped “Need help on Pest!” ──
     if msg_type == "button" and message.get("body", "").strip().lower() == "need help on pest!" and not state:
-        # Instead of sending main_menu_v2, we immediately send the Pest Control list:
         state["step"] = "pest_control_list"
         set_user_state("car", to, state)
+
+        # Instead of a free-form list, call the approved /sendList helper:
         send_pest_control_list(to, to)
         return Response(status=200)
 
-    # ── Step 2: After we set step="pest_control_list", user’s next interaction should be
-    #            the “car_fumigation” selection from that list ──
+    # ── Step 2: User picks “car_fumigation” from the Pest Control list ──
     if (
         msg_type == "interactive"
         and message.get("list_reply", {}).get("id") == "car_fumigation"
@@ -584,7 +483,7 @@ def handle_car_fumigation_flow(to: str, message: dict, api_key: str, base_url: s
         send_car_fum_menu(to, to)
         return Response(status=200)
 
-    # ── Step 3: In the “car_fum_menu” template, user tapped one of the three buttons ──
+    # ── Step 3: In car_fum_menu, user taps “Book Now” / “More Info on Service” / “Return to Main Menu” ──
     if msg_type == "button" and state.get("step") == "car_fum_menu":
         payload_text = message.get("body", "").strip().lower()
 
@@ -605,13 +504,13 @@ def handle_car_fumigation_flow(to: str, message: dict, api_key: str, base_url: s
             send_main_menu(to, to)
             return Response(status=200)
 
-    # ── Step 4: User tapped an FAQ row (msg_type=="interactive" & step=="fumigation_faq") ──
+    # ── Step 4: User taps a FAQ row ──
     if msg_type == "interactive" and state.get("step") == "fumigation_faq":
         faq_id = message.get("list_reply", {}).get("id")
         process_car_fumigation_faq_response(to, faq_id)
         return Response(status=200)
 
-    # ── Step 5: User selected “Book Now” and is now choosing pest type ──
+    # ── Step 5: User selected “Book Now” → Pest Type list ──
     if msg_type == "interactive" and state.get("step") == "select_pest_type":
         pest_choice = message.get("list_reply", {}).get("id")
         state["pest_type"] = pest_choice
@@ -625,7 +524,6 @@ def handle_car_fumigation_flow(to: str, message: dict, api_key: str, base_url: s
         vehicle_choice = message.get("list_reply", {}).get("id")
         state["vehicle"] = vehicle_choice
 
-        # If user chose “Super/Luxury Cars” or “Others”, require a manual quote
         if vehicle_choice in ["vehicle_ultra_luxury", "vehicle_others"]:
             state["manual_quote"] = True
             state["step"] = "quote_summary"
@@ -633,14 +531,13 @@ def handle_car_fumigation_flow(to: str, message: dict, api_key: str, base_url: s
             send_quote_summary(to, to)
             return Response(status=200)
 
-        # Otherwise, prompt for “Additional Care Fee”
         state["manual_quote"] = False
         state["step"] = "ask_luxury_brand"
         set_user_state("car", to, state)
         send_cfadditionalfee_prompt(to, to)
         return Response(status=200)
 
-    # ── Step 7: User answered “Yes” / “No” to “Additional Care Fee” ──
+    # ── Step 7: User answers “Yes” / “No” to Additional Care Fee ──
     if msg_type == "button" and state.get("step") == "ask_luxury_brand":
         payload_id = message.get("body", "").strip().lower()
         if payload_id == "yes":
@@ -652,33 +549,28 @@ def handle_car_fumigation_flow(to: str, message: dict, api_key: str, base_url: s
         send_upcoming_dates_list(to, to)
         return Response(status=200)
 
-    # ── Step 8: User tapped a date from the “Upcoming Dates” list ──
+    # ── Step 8: User tapped a date ──
     if msg_type == "interactive" and state.get("step") == "select_date":
         date_id = message.get("list_reply", {}).get("id")
 
         if date_id == "other_dates":
-            # User will type a date manually (e.g. "12-06-2025")
             state["step"] = "await_manual_date"
             set_user_state("car", to, state)
-
             send_text_message({
                 "to": to,
                 "type": "text",
                 "messaging_product": "whatsapp",
-                "text": {
-                    "body": "Please type your preferred appointment date in DD-MM-YYYY format."
-                }
+                "text": { "body": "Please type your preferred appointment date in DD-MM-YYYY format." }
             })
             return Response(status=200)
         else:
-            # date_id comes through like "date_12-06-2025"
-            chosen_date = date_id.split("_", 1)[1]  # "12-06-2025"
+            chosen_date = date_id.split("_", 1)[1]
             state["step"] = "select_time"
             set_user_state("car", to, state)
             send_time_selection_prompt(to, to, chosen_date)
             return Response(status=200)
 
-    # ── Step 9: User manually typed a date (msg_type=="text" & step=="await_manual_date") ──
+    # ── Step 9: User typed a date manually ──
     if msg_type == "text" and state.get("step") == "await_manual_date":
         user_date = message["text"]["body"].strip()
         try:
@@ -728,7 +620,7 @@ def handle_car_fumigation_flow(to: str, message: dict, api_key: str, base_url: s
         })
         return Response(status=200)
 
-    # ── Step 11: User replies with “Vehicle Model, Vehicle Number, On-site Location” ──
+    # ── Step 11: User sends final details text ──
     if msg_type == "text" and state.get("step") == "collect_final_details":
         parts = [p.strip() for p in message["text"]["body"].split(",")]
         if len(parts) != 3:
@@ -779,17 +671,15 @@ def handle_car_fumigation_flow(to: str, message: dict, api_key: str, base_url: s
             "to": to,
             "type": "text",
             "messaging_product": "whatsapp",
-            "text": {"body": confirmation_text}
+            "text": { "body": confirmation_text }
         })
 
         send_car_fumigation_faq(to, to)
         return Response(status=200)
 
-    # ───────────────────────────────────────────────────────────────────────
-    # Fallback: If we reach here, it means no step matched. Reset state & go back 
-    # to the very first “main menu” template.
-    # ───────────────────────────────────────────────────────────────────────
+    # ─────────────────────────────────────────────────────────────────────────────
+    # Fallback (if no step matched): clear state & send main menu
+    # ─────────────────────────────────────────────────────────────────────────────
     clear_user_state("car", to)
     send_main_menu(to, to)
     return Response(status=200)
-

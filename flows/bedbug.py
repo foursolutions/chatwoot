@@ -16,13 +16,12 @@ BEDBUG_PREFIX = "bedbug"   # Redis key prefix for Bedbug flow
 
 # Interactive list of areas a user can select when reporting bedbugs
 BEDBUG_AREAS = [
-    {"id": "bedbug_area_bed",        "title": "Bedroom(s)",       "description": "Bedbugs in bedroom(s)"},
-    {"id": "bedbug_area_living",     "title": "Living Area",      "description": "Bedbugs in living area"},
-    {"id": "bedbug_area_whole",      "title": "Whole Unit",       "description": "Bedbugs all over the unit"},
-    {"id": "bedbug_area_commercial", "title": "Commercial Space", "description": "Bedbugs in commercial space"},
-    {"id": "bedbug_area_others",     "title": "Others",           "description": "Other areas (specify)"}
+    { "id": "bedbug_area_bed",        "title": "Bedroom(s)",       "description": "Bedbugs in bedroom(s)"        },
+    { "id": "bedbug_area_living",     "title": "Living Area",      "description": "Bedbugs in living area"       },
+    { "id": "bedbug_area_whole",      "title": "Whole Unit",       "description": "Bedbugs all over the unit"    },
+    { "id": "bedbug_area_commercial", "title": "Commercial Space", "description": "Bedbugs in commercial space"   },
+    { "id": "bedbug_area_others",     "title": "Others",           "description": "Other areas (specify)"         }
 ]
-
 
 # ─── 1) Initial Bedbug‐Option Prompt ──────────────────────────────────────────
 def send_bedbug_option_prompt(to: str, phone_number_id: str):
@@ -40,12 +39,12 @@ def send_bedbug_option_prompt(to: str, phone_number_id: str):
         "type": "interactive",
         "interactive": {
             "type": "button",
-            "body": {"text": text},
+            "body": { "text": text },
             "action": {
                 "buttons": [
-                    {"type": "reply", "reply": {"id": "bedbug_quote",      "title": "Request a Quotation"}},
-                    {"type": "reply", "reply": {"id": "bedbug_more_info",  "title": "More Info on Service"}},
-                    {"type": "reply", "reply": {"id": "return_main_menu", "title": "Return to Main Menu"}}
+                    { "type": "reply", "reply": { "id": "bedbug_quote",     "title": "Request a Quotation" } },
+                    { "type": "reply", "reply": { "id": "bedbug_more_info", "title": "More Info on Service" } },
+                    { "type": "reply", "reply": { "id": "return_main_menu", "title": "Return to Main Menu" } }
                 ]
             }
         }
@@ -53,16 +52,15 @@ def send_bedbug_option_prompt(to: str, phone_number_id: str):
     send_interactive_message(payload)
 
     # Set current step in Redis
-    state = {"step": "bedbug_option", "affected_areas": []}
+    state = { "step": "bedbug_option", "affected_areas": [] }
     set_user_state(BEDBUG_PREFIX, to, state)
-
 
 # ─── 2) Affected‐Area Selection (Interactive List) ────────────────────────────
 def send_bedbug_area_selection(to: str, phone_number_id: str):
     """
     Sends an interactive list of BEDBUG_AREAS (excluding ones already chosen).
     """
-    state = get_user_state(BEDBUG_PREFIX, to) or {}
+    state    = get_user_state(BEDBUG_PREFIX, to) or {}
     selected = state.get("affected_areas", [])
 
     # Filter out areas that are already in “affected_areas”
@@ -73,7 +71,7 @@ def send_bedbug_area_selection(to: str, phone_number_id: str):
         return
 
     rows = [
-        {"id": area["id"], "title": area["title"], "description": area["description"]}
+        { "id": area["id"], "title": area["title"], "description": area["description"] }
         for area in available
     ]
     payload = {
@@ -83,12 +81,12 @@ def send_bedbug_area_selection(to: str, phone_number_id: str):
         "type": "interactive",
         "interactive": {
             "type": "list",
-            "header": {"type": "text", "text": "Bedbug Affected Areas"},
-            "body": {"text": "Select 1 or multiple areas affected by bedbugs (1 entry at a time):"},
-            "footer": {"text": "Select Area"},
+            "header": { "type": "text", "text": "Bedbug Affected Areas" },
+            "body":   { "text": "Select 1 or multiple areas affected by bedbugs (1 entry at a time):" },
+            "footer": { "text": "Select Area" },
             "action": {
                 "button": "Select Area",
-                "sections": [{"title": "Affected Areas", "rows": rows}]
+                "sections": [ { "title": "Affected Areas", "rows": rows } ]
             }
         }
     }
@@ -96,7 +94,6 @@ def send_bedbug_area_selection(to: str, phone_number_id: str):
 
     state["step"] = "bedbug_waiting_area_selection"
     set_user_state(BEDBUG_PREFIX, to, state)
-
 
 # ─── 3) Bedroom Count Prompt ──────────────────────────────────────────────────
 def send_bedbug_bedroom_count_prompt(to: str, phone_number_id: str):
@@ -110,17 +107,17 @@ def send_bedbug_bedroom_count_prompt(to: str, phone_number_id: str):
         "type": "interactive",
         "interactive": {
             "type": "list",
-            "header": {"type": "text", "text": "Number of Bedrooms Affected"},
-            "body": {"text": "How many bedrooms are affected by bedbugs?"},
-            "footer": {"text": "Select an option"},
+            "header": { "type": "text", "text": "Number of Bedrooms Affected" },
+            "body":   { "text": "How many bedrooms are affected by bedbugs?" },
+            "footer": { "text": "Select an option" },
             "action": {
                 "button": "Select Count",
                 "sections": [ {
                     "title": "Bedroom Count Options",
                     "rows": [
-                        {"id": "bedbug_bed_count_1", "title": "1 Bedroom",   "description": "1 Bedroom affected"},
-                        {"id": "bedbug_bed_count_2", "title": "2 Bedrooms",  "description": "2 Bedrooms affected"},
-                        {"id": "bedbug_bed_count_3", "title": "3+ Bedrooms", "description": "3 or more Bedrooms affected"}
+                        { "id": "bedbug_bed_count_1", "title": "1 Bedroom",   "description": "1 Bedroom affected"   },
+                        { "id": "bedbug_bed_count_2", "title": "2 Bedrooms",  "description": "2 Bedrooms affected" },
+                        { "id": "bedbug_bed_count_3", "title": "3+ Bedrooms", "description": "3 or more Bedrooms"  }
                     ]
                 } ]
             }
@@ -131,7 +128,6 @@ def send_bedbug_bedroom_count_prompt(to: str, phone_number_id: str):
     state = get_user_state(BEDBUG_PREFIX, to) or {}
     state["step"] = "bedbug_waiting_bedroom_count"
     set_user_state(BEDBUG_PREFIX, to, state)
-
 
 # ─── 4) Overall Bedbug Count Prompt ──────────────────────────────────────────
 def send_bedbug_count_prompt(to: str, phone_number_id: str):
@@ -145,19 +141,19 @@ def send_bedbug_count_prompt(to: str, phone_number_id: str):
         "type": "interactive",
         "interactive": {
             "type": "list",
-            "header": {"type": "text", "text": "Bedbug Count"},
-            "body": {"text": "Please indicate roughly how many bedbugs you've seen:"},
-            "footer": {"text": "Select an option"},
+            "header": { "type": "text", "text": "Bedbug Count" },
+            "body":   { "text": "Please indicate roughly how many bedbugs you've seen:" },
+            "footer": { "text": "Select an option" },
             "action": {
                 "button": "Select Count",
                 "sections": [ {
                     "title": "Bedbug Count Options",
                     "rows": [
-                        {"id": "bedbug_count_feel",    "title": "Not seen, but felt",      "description": "I have felt them but haven't seen any."},
-                        {"id": "bedbug_count_1to10",   "title": "1–10 Spotted",            "description": "Between 1 and 10 bedbugs."},
-                        {"id": "bedbug_count_11to30",  "title": "11–30 Spotted",           "description": "Between 11 and 30 bedbugs."},
-                        {"id": "bedbug_count_more30",  "title": "More than 30 Spotted",    "description": "Over 30 bedbugs."},
-                        {"id": "bedbug_count_others",  "title": "Others",                  "description": "Specify approximate number."}
+                        { "id": "bedbug_count_feel",    "title": "Not seen, but felt",      "description": "I have felt them but haven't seen any." },
+                        { "id": "bedbug_count_1to10",   "title": "1–10 Spotted",            "description": "Between 1 and 10 bedbugs."      },
+                        { "id": "bedbug_count_11to30",  "title": "11–30 Spotted",           "description": "Between 11 and 30 bedbugs."     },
+                        { "id": "bedbug_count_more30",  "title": "More than 30 Spotted",    "description": "Over 30 bedbugs."              },
+                        { "id": "bedbug_count_others",  "title": "Others",                  "description": "Specify approximate number."   }
                     ]
                 } ]
             }
@@ -168,7 +164,6 @@ def send_bedbug_count_prompt(to: str, phone_number_id: str):
     state = get_user_state(BEDBUG_PREFIX, to) or {}
     state["step"] = "bedbug_waiting_count_selection"
     set_user_state(BEDBUG_PREFIX, to, state)
-
 
 # ─── 5) “Add Another Area?” Confirmation ──────────────────────────────────────
 def send_bedbug_area_add_confirmation(to: str, phone_number_id: str):
@@ -182,11 +177,11 @@ def send_bedbug_area_add_confirmation(to: str, phone_number_id: str):
         "type": "interactive",
         "interactive": {
             "type": "button",
-            "body": {"text": "Would you like to add another affected area?"},
+            "body": { "text": "Would you like to add another affected area?" },
             "action": {
                 "buttons": [
-                    {"type": "reply", "reply": {"id": "bedbug_add_area_yes", "title": "Yes"}},
-                    {"type": "reply", "reply": {"id": "bedbug_add_area_no",  "title": "No"}}
+                    { "type": "reply", "reply": { "id": "bedbug_add_area_yes", "title": "Yes" }  },
+                    { "type": "reply", "reply": { "id": "bedbug_add_area_no",  "title": "No"  }  }
                 ]
             }
         }
@@ -196,7 +191,6 @@ def send_bedbug_area_add_confirmation(to: str, phone_number_id: str):
     state = get_user_state(BEDBUG_PREFIX, to) or {}
     state["step"] = "bedbug_waiting_area_add_confirmation"
     set_user_state(BEDBUG_PREFIX, to, state)
-
 
 # ─── 6) Summary & Confirmation ───────────────────────────────────────────────
 def send_bedbug_summary(to: str, phone_number_id: str):
@@ -230,11 +224,11 @@ def send_bedbug_summary(to: str, phone_number_id: str):
         "type": "interactive",
         "interactive": {
             "type": "button",
-            "body": {"text": summary},
+            "body": { "text": summary },
             "action": {
                 "buttons": [
-                    {"type": "reply", "reply": {"id": "bedbug_confirm_yes", "title": "Yes"}},
-                    {"type": "reply", "reply": {"id": "bedbug_confirm_no",  "title": "No"}}
+                    { "type": "reply", "reply": { "id": "bedbug_confirm_yes", "title": "Yes" } },
+                    { "type": "reply", "reply": { "id": "bedbug_confirm_no",  "title": "No"  } }
                 ]
             }
         }
@@ -243,7 +237,6 @@ def send_bedbug_summary(to: str, phone_number_id: str):
 
     state["step"] = "bedbug_waiting_confirmation"
     set_user_state(BEDBUG_PREFIX, to, state)
-
 
 # ─── 7) Interactive Bedbug FAQ List ───────────────────────────────────────────
 def send_bedbug_faq_list(to: str, phone_number_id: str):
@@ -257,19 +250,19 @@ def send_bedbug_faq_list(to: str, phone_number_id: str):
         "type": "interactive",
         "interactive": {
             "type": "list",
-            "header": {"type": "text", "text": "Bedbug FAQ"},
-            "body": {"text": "Select a FAQ question:"},
-            "footer": {"text": "Tap an option"},
+            "header": { "type": "text", "text": "Bed Bug FAQ" },
+            "body":   { "text": "Select a FAQ question:" },
+            "footer": { "text": "Tap an option" },
             "action": {
                 "button": "Select FAQ",
                 "sections": [ {
                     "title": "FAQ Questions",
                     "rows": [
-                        {"id": "bbfaq_safe",        "title": "Is it Safe?",          "description": "Kids/Pets: Is the treatment safe?"},
-                        {"id": "bbfaq_service",     "title": "Service Details",      "description": "What's included in heat treatment?"},
-                        {"id": "bbfaq_warranty",    "title": "Warranty Details",     "description": "Coverage and terms"},
-                        {"id": "bbfaq_preparation", "title": "Preparation",          "description": "How to prepare your space?"},
-                        {"id": "bbfaq_payment",     "title": "Payment Options",      "description": "Payment methods accepted"}
+                        { "id": "bbfaq_safe",        "title": "Is it Safe?",          "description": "Kids/Pets: Is the treatment safe?" },
+                        { "id": "bbfaq_service",     "title": "Service Details",      "description": "What's included in heat treatment?" },
+                        { "id": "bbfaq_warranty",    "title": "Warranty Details",     "description": "Coverage and terms" },
+                        { "id": "bbfaq_preparation", "title": "Preparation",          "description": "How to prepare your space?" },
+                        { "id": "bbfaq_payment",     "title": "Payment Options",      "description": "Payment methods accepted" }
                     ]
                 } ]
             }
@@ -280,7 +273,6 @@ def send_bedbug_faq_list(to: str, phone_number_id: str):
     state = get_user_state(BEDBUG_PREFIX, to) or {}
     state["step"] = "bedbug_faq"
     set_user_state(BEDBUG_PREFIX, to, state)
-
 
 def process_bedbug_faq_response(to: str, faq_id: str):
     """
@@ -335,7 +327,7 @@ def process_bedbug_faq_response(to: str, faq_id: str):
         "to": to,
         "type": "text",
         "messaging_product": "whatsapp",
-        "text": {"body": answer}
+        "text": { "body": answer }
     })
 
     # After sending the answer, re‐send the FAQ list so user can pick another question
@@ -364,7 +356,8 @@ def _maybe_ask_bedroom_count(to: str, phone_number_id: str):
 def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
     """
     Main driver for the Bedbug flow. 
-    Called by dispatcher.py when Redis state for prefix="bedbug" exists (or when 'Need help on Bedbugs!' is tapped).
+    Called by dispatcher.py when Redis state for prefix="bedbug" exists 
+    (or when 'Need help on Bedbugs!' is tapped).
     """
     state = user_state or {}
     step  = state.get("step", "")
@@ -372,22 +365,12 @@ def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
 
     # Helper to extract quick‐reply button payload
     def extract_button_payload(msg: dict) -> str:
-        # 1) If there really is a nested “button” dict, use its payload:
-        if msg.get("type") == "button" and isinstance(msg.get("button"), dict):
-            return msg["button"].get("payload", "")
-
-        # 2) Otherwise, when type == "button" with no nested msg["button"],
-        #    the tapped button text is in msg["body"]:
         if msg.get("type") == "button":
-            return msg.get("body", "")
-
-        # 3) If this is an interactive-list‐reply, extract the id:
-        if (msg.get("type") == "interactive"
+            return msg["button"]["payload"]
+        if (msg.get("type") == "interactive" 
                 and msg["interactive"].get("type") == "button_reply"):
-            return msg["interactive"]["button_reply"].get("id", "")
-
+            return msg["interactive"]["button_reply"]["id"]
         return ""
-
 
     # ─── A) If user taps any FAQ (list_reply ID starts with "bbfaq_"), show answer ───
     if msg_type == "interactive" and message["interactive"].get("type") == "list_reply":
@@ -419,7 +402,7 @@ def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
             if step == "bedbug_option":
                 if payload_lower == "bedbug_quote":
                     # Start quoting: collect areas
-                    new_state = {"step": "bedbug_select_area", "affected_areas": []}
+                    new_state = { "step": "bedbug_select_area", "affected_areas": [] }
                     set_user_state(BEDBUG_PREFIX, from_number, new_state)
                     send_bedbug_area_selection(
                         to=from_number,
@@ -451,7 +434,7 @@ def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
                     "to": from_number,
                     "type": "text",
                     "messaging_product": "whatsapp",
-                    "text": {"body": "Sorry, I didn’t understand that. Type 'reset' to start over."}
+                    "text": { "body": "Sorry, I didn’t understand that. Type 'reset' to start over." }
                 })
                 return
 
@@ -467,7 +450,7 @@ def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
                     return
 
                 if payload_lower == "bedbug_add_area_no":
-                    # Remove the awaiting flag (not strictly needed here), then proceed to counts
+                    # Remove the awaiting flag, then proceed to counts
                     if "awaiting_area_add_confirmation" in state:
                         del state["awaiting_area_add_confirmation"]
                     set_user_state(BEDBUG_PREFIX, from_number, state)
@@ -478,7 +461,7 @@ def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
                     "to": from_number,
                     "type": "text",
                     "messaging_product": "whatsapp",
-                    "text": {"body": "Please select 'Yes' or 'No'."}
+                    "text": { "body": "Please select 'Yes' or 'No'." }
                 })
                 return
 
@@ -517,7 +500,9 @@ def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
                         "to": from_number,
                         "type": "text",
                         "messaging_product": "whatsapp",
-                        "text": {"body": "Please specify the approximate number of bedbugs:"}
+                        "text": {
+                            "body": "Please specify the approximate number of bedbugs:"
+                        }
                     })
                     return
 
@@ -544,7 +529,7 @@ def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
                         "to": from_number,
                         "type": "text",
                         "messaging_product": "whatsapp",
-                        "text": {"body": hold_on_text}
+                        "text": { "body": hold_on_text }
                     })
 
                     # Small delay so the FAQ isn’t dropped
@@ -564,7 +549,7 @@ def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
                         "to": from_number,
                         "type": "text",
                         "messaging_product": "whatsapp",
-                        "text": {"body": "Let's update your bedbug details. Restarting the bedbug flow."}
+                        "text": { "body": "Let's update your bedbug details. Restarting the bedbug flow." }
                     })
                     clear_user_state(BEDBUG_PREFIX, from_number)
                     send_bedbug_option_prompt(
@@ -577,14 +562,14 @@ def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
                     "to": from_number,
                     "type": "text",
                     "messaging_product": "whatsapp",
-                    "text": {"body": "Please select 'Yes' or 'No'."}
+                    "text": { "body": "Please select 'Yes' or 'No'." }
                 })
                 return
 
     # ─── C) Handle interactive LIST replies (“interactive.list_reply”) ─────────────
-    if msg_type == "interactive" and message.get("interactive", {}).get("type") == "list_reply":
-        choice_id    = message.get("interactive", {}).get("list_reply", {}).get("id", "")
-        choice_title = message.get("interactive", {}).get("list_reply", {}).get("title", "")
+    if msg_type == "interactive" and message["interactive"].get("type") == "list_reply":
+        choice_id    = message["interactive"]["list_reply"]["id"]
+        choice_title = message["interactive"]["list_reply"].get("title", "")
         print(f"[DEBUG] handle_bedbug_flow: LIST payload='{choice_id}' from {from_number}")
 
         state = user_state or {}
@@ -602,7 +587,7 @@ def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
                     "to": from_number,
                     "type": "text",
                     "messaging_product": "whatsapp",
-                    "text": {"body": "Please specify the affected area:"}
+                    "text": { "body": "Please specify the affected area:" }
                 })
                 return
 
@@ -638,7 +623,7 @@ def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
 
     # ─── D) Handle plain‐text input for “Others” or custom count ─────────────────
     if msg_type == "text":
-        text_body = message.get("text", {}).get("body", "").strip()
+        text_body = message["text"]["body"].strip()
         state     = user_state or {}
         step      = state.get("step", "")
 
@@ -670,5 +655,5 @@ def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
         "to": from_number,
         "type": "text",
         "messaging_product": "whatsapp",
-        "text": {"body": "Sorry, I can’t handle that type of message. Type 'reset' to start over."}
+        "text": { "body": "Sorry, I can’t handle that type of message. Type 'reset' to start over." }
     })

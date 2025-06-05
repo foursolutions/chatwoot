@@ -1,4 +1,3 @@
-# dispatcher.py
 import os
 import json
 from flask import Flask, request, Response
@@ -35,25 +34,25 @@ def receive_message():
     payload = request.get_json(force=True)
     print(">>>> RAW INCOMING JSON:", json.dumps(payload, indent=2))
 
-    # This structure partial depends on 1msg’s “cloud webhook” format:
-    #   { "entry": [ { "changes": [ { "value": { "messages": […] } } ] } ] }
-    entry   = payload.get("entry", [{}])[0]
-    changes = entry.get("changes", [{}])[0]
-    value   = changes.get("value", {})
+    entry    = payload.get("entry", [{}])[0]
+    changes  = entry.get("changes", [{}])[0]
+    value    = changes.get("value", {})
     messages = value.get("messages", [])
     if not messages:
         return Response(status=200)
 
-    message = messages[0]
-    raw_from = message.get("from", "")
+    message    = messages[0]
+    raw_from   = message.get("from", "")
     from_number = raw_from.split("@")[0] if "@" in raw_from else raw_from
-    msg_type = message.get("type", "")
-    text_body = ""
-    if msg_type == "text":
-        text_body = message["text"]["body"].strip().lower()
+    msg_type   = message.get("type", "")
+    text_body  = ""
+    if msg_type in ("text", "chat"):
+        # 1msg sometimes uses "type":"chat" for free‐text
+        text_body = message.get("text", {}).get("body", "").strip().lower()
 
-    # If the user sends “reset”, clear all states and send main menu
-    if msg_type == "text" and text_body == "reset":
+    # ─────── CHANGE IS HERE ───────
+    # If user sends “reset” (msg_type may be "text" or "chat"), clear states & send main menu
+    if msg_type in ("text", "chat") and text_body == "reset":
         clear_user_state("car", from_number)
         clear_user_state("bedbug", from_number)
         clear_user_state("mold", from_number)
@@ -120,8 +119,8 @@ def receive_message():
             })
             return Response(status=200)
 
-    # If user sends free-text and is already in a flow, delegate appropriately:
-    user_state_car = get_user_state("car", from_number)
+    # If user sends free‐text and is already in a flow, delegate to the correct flow:
+    user_state_car   = get_user_state("car", from_number)
     if user_state_car:
         return handle_car_fumigation_flow(from_number, message, API_KEY, BASE_URL)
 
@@ -129,12 +128,12 @@ def receive_message():
     if user_state_bedbug:
         return handle_bedbug_flow(from_number, message, API_KEY, BASE_URL)
 
-    user_state_mold = get_user_state("mold", from_number)
+    user_state_mold  = get_user_state("mold", from_number)
     if user_state_mold:
         return handle_mold_flow(from_number, message, API_KEY, BASE_URL)
 
-    # Otherwise, if this is just raw “Hello” or any other text, show main menu:
-    if msg_type == "text":
+    # Otherwise (any other text, since we didn’t match “reset”), show main menu:
+    if msg_type in ("text", "chat"):
         interactive_payload = {
             "to": from_number,
             "type": "interactive",

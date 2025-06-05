@@ -1,18 +1,21 @@
 # dispatcher.py
+
 import os
 import json
 from flask import Flask, request, Response
+
 from helpers import (
     send_text_message,
     send_interactive_message,
-    send_template_message,
+    send_template_message,   # ← Make sure this helper is imported
     get_user_state,
     set_user_state,
     clear_user_state
 )
+
 from flows.car_fumigation import handle_car_fumigation_flow
-from flows.bedbug import handle_bedbug_flow
-from flows.mold import handle_mold_flow
+from flows.bedbug         import handle_bedbug_flow
+from flows.mold           import handle_mold_flow
 
 app = Flask(__name__)
 
@@ -37,7 +40,6 @@ def receive_message():
     print(">>>> RAW INCOMING JSON:", json.dumps(payload, indent=2))
 
     # ─── Extract messages array ───
-    # 1msg sometimes wraps under entry/changes/value, sometimes sends top‐level "messages".
     messages = None
     if isinstance(payload.get("entry"), list):
         entry   = payload.get("entry", [{}])[0]
@@ -52,41 +54,54 @@ def receive_message():
     if not messages:
         return Response(status=200)
 
+    # We only process the first message in the array
     message_raw = messages[0]
-    # 1msg uses either "from" or "author". We normalize to from_number (no "@c.us").
+
+    # ───────────────────────────────────────────────────────────────────
+    # 1) Ignore any message that came “fromMe” or “self” (i.e. your own outgoing/template echo)
+    #    WhatsApp will send back your own template/send as an incoming JSON with "fromMe": true
+    #    If we do not skip it, the bot will treat it as a user message and loop.
+    # ───────────────────────────────────────────────────────────────────
+    if message_raw.get("fromMe") or message_raw.get("self") == 1:
+        return Response(status=200)
+
+    # ───────────────────────────────────────────────────────────────────
+    # 2) Normalize “from” (can be “from” or “author” or “chatId/author”)
     raw_from = message_raw.get("from") or message_raw.get("author") or ""
     from_number = raw_from.split("@")[0] if "@" in raw_from else raw_from
 
+    # ───────────────────────────────────────────────────────────────────
+    # 3) Extract message type and body text (lowercased)
     msg_type = message_raw.get("type", "")
-
-    # ✅ Normalize body text from various formats (chat, text, etc.)
     body_text = ""
-    if "text" in message_raw and "body" in message_raw["text"]:
-        body_text = message_raw["text"]["body"].strip().lower()
-    elif "body" in message_raw:
-        body_text = message_raw["body"].strip().lower()
+    if "text" in message_raw and isinstance(message_raw["text"], dict):
+        body_text = message_raw["text"].get("body", "").strip().lower()
+    elif message_raw.get("body"):
+        body_text = message_raw.get("body", "").strip().lower()
 
-    # ─────── 1) “reset” check ───────
+    # ───────────────────────────────────────────────────────────────────
+    # 4) “reset” branch: clear all flow states and re‐send main_menu_v2 template once
+    # ───────────────────────────────────────────────────────────────────
     if body_text == "reset":
-        print(f"[DEBUG] RESET branch hit (body_text=='reset'), msg_type={msg_type}")
-        clear_user_state("car", from_number)
-        clear_user_state("bedbug", from_number)
-        clear_user_state("mold", from_number)
+        print("[DEBUG] RESET branch hit (body_text=='reset'), msg_type=", msg_type)
 
-        # ✅ Send approved main_menu_v2 template (via send_template_message)
-        #    The helper will POST to /sendTemplate automatically.
+        clear_user_state("car",    from_number)
+        clear_user_state("bedbug", from_number)
+        clear_user_state("mold",   from_number)
+
+        # Use send_template_message(...) to send a template
         send_template_message(
             to=from_number,
             template_name="main_menu_v2",
-            template_params=["there"]
+            template_params=["there"]   # your template’s placeholder
         )
         return Response(status=200)
 
-    # ─────── 2) “button” presses ───────
-    # Note: 1msg represents quick‐reply buttons with msg_type == "button"
+    # ───────────────────────────────────────────────────────────────────
+    # 5) “button” presses: user tapped one of the interactive buttons
+    # ───────────────────────────────────────────────────────────────────
     if msg_type == "button":
-        # Safely grab payload
-        button_id = message_raw.get("button", {}).get("payload", "")
+        button_id = message_raw["button"].get("payload", "")
         print(f"[DEBUG] BUTTON payload = {button_id}")
 
         if button_id == "help_pest":
@@ -106,19 +121,28 @@ def receive_message():
             })
             return Response(status=200)
 
-    # ─────── 3–5) Resume if in a flow ───────
-    if get_user_state("car", from_number) is not None:
+    # ───────────────────────────────────────────────────────────────────
+    # 6) Resume any in‐flight flow (car_fumigation, bedbug, or mold)
+    # ───────────────────────────────────────────────────────────────────
+    user_state_car    = get_user_state("car",    from_number)
+    user_state_bedbug = get_user_state("bedbug", from_number)
+    user_state_mold   = get_user_state("mold",   from_number)
+
+    if user_state_car is not None:
         return handle_car_fumigation_flow(from_number, message_raw, API_KEY, BASE_URL)
-    if get_user_state("bedbug", from_number) is not None:
-        return handle_bedbug_flow(from_number, message_raw, API_KEY, BASE_URL)
-    if get_user_state("mold", from_number) is not None:
-        return handle_mold_flow(from_number, message_raw, API_KEY, BASE_URL)
 
-    # ─────── 6) Any other free‐text (not “reset” / not in flow) → send main menu ───────
-    if msg_type in ("text", "chat") or body_text:
-        print(f"[DEBUG] Falling back to 'show main menu' for: \"{body_text}\" (msg_type={msg_type})")
+    if user_state_bedbug is not None:
+        return handle_bedbug_flow(from_number, message_raw, user_state_bedbug)
 
-        # Use the same template as above
+    if user_state_mold is not None:
+        return handle_mold_flow(from_number, message_raw, user_state_mold)
+
+    # ───────────────────────────────────────────────────────────────────
+    # 7) Fallback: any other free‐text → re‐send main_menu_v2 once
+    # ───────────────────────────────────────────────────────────────────
+    if msg_type in ("text", "chat") and body_text != "":
+        print("[DEBUG] Falling back to “show main menu” for:", body_text, "msg_type=", msg_type)
+
         send_template_message(
             to=from_number,
             template_name="main_menu_v2",
@@ -128,4 +152,9 @@ def receive_message():
 
     return Response(status=200)
 
+
 # ───── End of dispatcher.py ─────
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)

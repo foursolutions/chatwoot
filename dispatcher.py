@@ -18,61 +18,64 @@ from flows.mold import handle_mold_flow, send_mold_option_prompt
 
 app = Flask(__name__)
 
-# ─── Helper to extract “pure” phone (no “@c.us”) ───────────────────────────────
+
 def normalize_phone(wa_id: str) -> str:
     """
-    Converts "6587788080@c.us" → "6587788080" (no “+”)
+    Strips off “@c.us” from a WhatsApp ID so that we only pass digits to 1msg.
+    e.g. "6587788080@c.us" → "6587788080"
     """
-    return wa_id.split("@")[0]
+    if "@" in wa_id:
+        return wa_id.split("@")[0]
+    return wa_id
 
 
-# ─── Main Webhook Endpoint ─────────────────────────────────────────────────────
 @app.route("/webhook", methods=["POST"])
 def webhook():
     raw = request.get_data(as_text=True)
     payload = json.loads(raw)
 
-    # Always log the incoming JSON
+    # Log the incoming payload
     print(">>>> RAW INCOMING JSON:", json.dumps(payload, indent=2))
 
-    # We expect “messages” array at top level
     messages = payload.get("messages") or []
     if not messages:
         return Response(status=200)
 
     msg = messages[0]
-    wa_id   = msg.get("chatId") or msg.get("author")     # "6587788080@c.us"
-    from_id = msg.get("author") or msg.get("chatId")     # sometimes “author”, sometimes “chatId”
-    msg_type = msg.get("type")                           # "chat", "button", "interactive", etc.
+    wa_id    = msg.get("chatId") or msg.get("author")    # e.g. "6587788080@c.us"
+    from_id  = msg.get("author") or msg.get("chatId")    # same thing
+    msg_type = msg.get("type")                           # e.g. "chat", "button", "interactive"
     body_text = (msg.get("body") or "").strip()
 
-    # Normalize phone (no “@c.us”)
+    # Normalize phone number (strip off "@c.us")
     phone_no = normalize_phone(from_id)
 
-    # Check for explicit “reset” command (in plain text)
+    # ─── 1) RESET BRANCH ─────────────────────────────────────────────────────────
     if msg_type == "chat" and body_text.lower() == "reset":
-        # Clear any in‐progress flow state for all prefixes
+        # Clear any in-progress flow states:
         clear_user_state("car_fumigation", wa_id)
         clear_user_state("bedbug", wa_id)
         clear_user_state("mold", wa_id)
-        # Send main menu template
-        send_template_message(
+
+        print("[DEBUG] RESET branch hit (body_text == 'reset'), will send main_menu_v2")
+
+        # Send the Main Menu template back to the user (no “@c.us”, just digits)
+        resp = send_template_message(
             to=phone_no,
             template_name="main_menu_v2",
             template_params=["there"]
         )
+        print(f"[DEBUG] send_template_message(main_menu_v2) → {resp}")
+
         return Response(status=200)
 
-    # ─── ROUTE INTO CAR‐FUMIGATION FLOW ─────────────────────────────────────────
-    #
-    # 1) If user taps a “Need help on Pest!” button (payload or body), or has state for car_fumigation
-    #
+
+    # ─── 2) ROUTE INTO CAR-FUMIGATION FLOW ────────────────────────────────────────
     car_state = get_user_state("car_fumigation", wa_id) or {}
     if (
         (msg_type in ["button", "interactive"] and body_text.lower() == "need help on pest!")
         or car_state.get("step")
     ):
-        # Dispatch entire flow to car_fumigation
         handle_car_fumigation_flow(
             from_number=wa_id,
             message=msg,
@@ -81,8 +84,8 @@ def webhook():
         )
         return Response(status=200)
 
-    # ─── ROUTE INTO BEDBUG FLOW ───────────────────────────────────────────────────
-    #
+
+    # ─── 3) ROUTE INTO BEDBUG FLOW ───────────────────────────────────────────────
     bedbug_state = get_user_state("bedbug", wa_id) or {}
     if (
         (msg_type in ["button", "interactive"] and body_text.lower().startswith("need help on bedbug"))
@@ -91,8 +94,8 @@ def webhook():
         handle_bedbug_flow(from_number=wa_id, message=msg, user_state=bedbug_state)
         return Response(status=200)
 
-    # ─── ROUTE INTO MOLD FLOW ─────────────────────────────────────────────────────
-    #
+
+    # ─── 4) ROUTE INTO MOLD FLOW ─────────────────────────────────────────────────
     mold_state = get_user_state("mold", wa_id) or {}
     if (
         (msg_type in ["button", "interactive"] and body_text.lower() == "need help on mold!")
@@ -101,18 +104,19 @@ def webhook():
         handle_mold_flow(from_number=wa_id, message=msg, user_state=mold_state)
         return Response(status=200)
 
-    # ─── FALLBACK: ANY OTHER UNRECOGNIZED MESSAGE ─────────────────────────────────
-    #
-    # If the user types plain text that isn't “reset” or isn't handled by any flow, resend main menu.
+
+    # ─── 5) FALLBACK FOR ANY OTHER “CHAT” ────────────────────────────────────────
     if msg_type == "chat":
-        send_template_message(
+        print(f"[DEBUG] FALLBACK chat (“{body_text}”), resending main_menu_v2")
+        resp = send_template_message(
             to=phone_no,
             template_name="main_menu_v2",
             template_params=["there"]
         )
+        print(f"[DEBUG] send_template_message(main_menu_v2) → {resp}")
         return Response(status=200)
 
-    # For any other message types (e.g., read receipts, location, etc.), do nothing
+    # Any other message types (e.g. read receipts, location, etc.) → do nothing
     return Response(status=200)
 
 

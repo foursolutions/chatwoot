@@ -20,7 +20,6 @@ ALERT_NUMBERS = [
     "6580681688",  # Sales in charge +65 80681688
 ]
 
-
 # ================================================================================ 
 # 1) Main Menu (Template)
 #
@@ -567,7 +566,7 @@ def handle_car_fumigation_flow(to: str, message: dict, api_key: str, base_url: s
     msg_type = message.get("type", "")
 
     # ── Step 1: User tapped “Need help on Pest!” ──
-    if msg_type == "button" and message["button"]["payload"] == "help_pest" and not state:
+    if msg_type == "button" and message.get("body", "").strip().lower() == "need help on pest!" and not state:
         # Render the “Main Menu” template
         state["step"] = "main_menu_sent"
         set_user_state("car", to, state)
@@ -598,28 +597,29 @@ def handle_car_fumigation_flow(to: str, message: dict, api_key: str, base_url: s
 
     # ── Step 4: In the “car_fum_menu” template, user tapped one of the three buttons ──
     if msg_type == "button" and state.get("step") == "car_fum_menu":
-        payload_id = message["button"]["payload"]
+        # Again, 1msg puts the tapped‐button text into message["body"]
+        payload_text = message.get("body", "").strip().lower()
 
-        if payload_id == "book_appointment":
+        if payload_text == "book appointment":
             # Move to “Select Pest Type” list
             state["step"] = "select_pest_type"
             set_user_state("car", to, state)
             send_pest_type_list(to, message["from"])
             return Response(status=200)
 
-        elif payload_id == "fumigation_faq":
+        elif payload_text == "more info on service":
             state["step"] = "fumigation_faq"
             set_user_state("car", to, state)
             send_car_fumigation_faq(to, message["from"])
             return Response(status=200)
 
-        elif payload_id == "return_main_menu":
+        elif payload_text == "return to main menu":
             # Reset state and return to main menu
             clear_user_state("car", to)
             send_main_menu(to, message["from"])
             return Response(status=200)
 
-    # ── Step 5: User tapped an FAQ row (msg_type == "interactive") ──
+    # ── Step 5: User tapped an FAQ row (msg_type == "interactive" & step=="fumigation_faq") ──
     if msg_type == "interactive" and state.get("step") == "fumigation_faq":
         faq_id = message.get("list_reply", {}).get("id")
         process_car_fumigation_faq_response(to, faq_id)
@@ -656,8 +656,8 @@ def handle_car_fumigation_flow(to: str, message: dict, api_key: str, base_url: s
 
     # ── Step 8: User answered “Yes” / “No” to “Additional Care Fee” ──
     if msg_type == "button" and state.get("step") == "ask_luxury_brand":
-        payload_id = message["button"]["payload"]
-        if payload_id == "luxury_yes":
+        payload_id = message.get("body", "").strip().lower()
+        if payload_id == "yes":
             state["continental"] = "luxury_yes"
         else:
             state["continental"] = "luxury_no"
@@ -714,13 +714,13 @@ def handle_car_fumigation_flow(to: str, message: dict, api_key: str, base_url: s
 
     # ── Step 11: User tapped “Morning” / “Afternoon” / “Evening” ──
     if msg_type == "button" and state.get("step") == "select_time":
-        payload_id = message["button"]["payload"]
+        payload_id = message.get("body", "").strip().lower()
         # Map payload_id to actual time slot
-        if payload_id == "time_morning":
+        if payload_id == "time morning":
             chosen_time = "10:00 - 12:00"
-        elif payload_id == "time_afternoon":
+        elif payload_id == "time afternoon":
             chosen_time = "12:00 - 18:00"
-        elif payload_id == "time_evening":
+        elif payload_id == "time evening":
             chosen_time = "18:00 - 23:59"
         else:
             chosen_time = ""

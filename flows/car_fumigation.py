@@ -557,40 +557,45 @@ def process_car_fumigation_faq_response(to: str, faq_id: str):
 # ================================================================================ 
 def handle_car_fumigation_flow(to: str, message: dict, api_key: str, base_url: str):
     """
-    Main car fumigation flow dispatcher, called whenever:
-      • user taps “Need help on Pest!”
-      • user selects “car_fumigation” from the pest control list (msg_type="interactive")
-      • any subsequent interaction within the car fumigation flow
+    Main car fumigation flow dispatcher. …
     """
-    # Retrieve in-memory state for this phone number
     state = get_user_state("car", to) or {}
-
     msg_type = message.get("type", "")
 
     # ── Step 1: User tapped “Need help on Pest!” ──
-    if msg_type == "button" and message.get("button", {}).get("payload") == "help_pest" and not state:
-        # Render the “Main Menu” template
-        state["step"] = "main_menu_sent"
-        set_user_state("car", to, state)
-        send_main_menu(to, to)       # <-- changed message["from"] to simply `to`
-        return Response(status=200)
+    if msg_type == "button":
+        # 1) If there really is a nested “button” payload, use it:
+        nested = message.get("button", {})
+        payload_id = ""
+        if isinstance(nested, dict):
+            payload_id = nested.get("payload", "").lower()
+
+        # 2) Otherwise (no nested “button”), fall back to the raw "body" text:
+        if not payload_id:
+            payload_id = message.get("body", "").strip().lower()
+
+        if payload_id == "help_pest":
+            state["step"] = "main_menu_sent"
+            set_user_state("car", to, state)
+            send_main_menu(to, message["from"])
+            return Response(status=200)
 
     # ── Step 2: After main menu is sent, show “Pest Control Services” list ──
     if state.get("step") in ("main_menu_sent", ""):
         state["step"] = "pest_control_list"
         set_user_state("car", to, state)
-        send_pest_control_list(to, to)   # <-- changed message["from"] to `to`
+        send_pest_control_list(to, message["from"])
         return Response(status=200)
 
     # ── Step 3: User selected “car_fumigation” from the pest list ──
     if (
         msg_type == "interactive"
-        and message.get("interactive", {}).get("list_reply", {}).get("id") == "car_fumigation"
+        and message["interactive"].get("list_reply", {}).get("id") == "car_fumigation"
         and state.get("step") == "pest_control_list"
     ):
         state["step"] = "car_fum_menu"
         set_user_state("car", to, state)
-        send_car_fum_menu(to, to)    # <-- changed message["from"] to `to`
+        send_car_fum_menu(to, message["from"])
         return Response(status=200)
 
     # ── Step 4: In the “car_fum_menu” template, user tapped one of the three buttons ──

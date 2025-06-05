@@ -6,6 +6,7 @@ from flask import Flask, request, Response
 from helpers import (
     send_text_message,
     send_interactive_message,
+    send_template_message,     # <–– make sure to import this!
     get_user_state,
     set_user_state,
     clear_user_state
@@ -62,7 +63,7 @@ def receive_message():
     if msg_type == "text" and "text" in message_raw:
         body_text = message_raw["text"].get("body", "").strip().lower()
 
-    # ─────── 1) “reset” check: ANY type that contains a lowercase "reset" ───────
+    # ─────── 1) “reset” check ───────
     if body_text == "reset":
         print("[DEBUG] RESET branch hit (body_text=='reset'), msg_type=", msg_type)
         # Clear all flow states:
@@ -70,54 +71,17 @@ def receive_message():
         clear_user_state("bedbug", from_number)
         clear_user_state("mold", from_number)
 
-        # Send main‐menu template back via 1msg
-        interactive_payload = {
-            "to": from_number,
-            "type": "interactive",
-            "messaging_product": "whatsapp",
-            "interactive": {
-                "type": "button",
-                "body": {
-                    "text": (
-                        "Hi there, thanks for reaching out to Four Solutions! "
-                        "I'm Solvia, your fun and friendly chatbot.\n"
-                        "How may I help you today? (Tap \"Live Human\" anytime, "
-                        "or choose one of the options below.)"
-                    )
-                },
-                "action": {
-                    "buttons": [
-                        {
-                            "type": "reply",
-                            "reply": {
-                                "id": "help_pest",
-                                "title": "Need help on Pest!"
-                            }
-                        },
-                        {
-                            "type": "reply",
-                            "reply": {
-                                "id": "help_mold",
-                                "title": "Need help on Mold!"
-                            }
-                        },
-                        {
-                            "type": "reply",
-                            "reply": {
-                                "id": "live_human",
-                                "title": "Live Human"
-                            }
-                        }
-                    ]
-                }
-            }
-        }
-        send_interactive_message(interactive_payload)
+        # Use the pre‐approved template "main_menu_v2" instead of raw interactive:
+        send_template_message(
+            to=from_number,
+            template_name="main_menu_v2",
+            template_params=["there"]
+        )
         return Response(status=200)
 
     # ─────── 2) “button” presses ───────
     if msg_type == "button":
-        # 1msg now puts the tapped‐button text into message_raw["body"], not nested under ["button"].
+        # 1msg now puts the tapped‐button text into message_raw["body"], not nested under ["button"]["payload"].
         btn_text = message_raw.get("body", "").strip().lower()
         print(f"[DEBUG] BUTTON text = '{btn_text}'")
 
@@ -155,49 +119,14 @@ def receive_message():
 
     # ─────── 6) Any other free‐text (not “reset”) → send main menu ───────
     if msg_type in ("text", "chat", "chat") or body_text:
-        print("[DEBUG] Falling back to “show main menu” for:", body_text, "msg_type=", msg_type)
-        interactive_payload = {
-            "to": from_number,
-            "type": "interactive",
-            "messaging_product": "whatsapp",
-            "interactive": {
-                "type": "button",
-                "body": {
-                    "text": (
-                        "Hi there, thanks for reaching out to Four Solutions! "
-                        "I'm Solvia, your fun and friendly chatbot.\n"
-                        "How may I help you today? (Tap \"Live Human\" anytime, "
-                        "or choose one of the options below.)"
-                    )
-                },
-                "action": {
-                    "buttons": [
-                        {
-                            "type": "reply",
-                            "reply": {
-                                "id": "help_pest",
-                                "title": "Need help on Pest!"
-                            }
-                        },
-                        {
-                            "type": "reply",
-                            "reply": {
-                                "id": "help_mold",
-                                "title": "Need help on Mold!"
-                            }
-                        },
-                        {
-                            "type": "reply",
-                            "reply": {
-                                "id": "live_human",
-                                "title": "Live Human"
-                            }
-                        }
-                    ]
-                }
-            }
-        }
-        send_interactive_message(interactive_payload)
+        print("[DEBUG] Falling back to show main menu for:", body_text, "msg_type=", msg_type)
+
+        # Use the template again, not raw interactive:
+        send_template_message(
+            to=from_number,
+            template_name="main_menu_v2",
+            template_params=["there"]
+        )
         return Response(status=200)
 
     return Response(status=200)

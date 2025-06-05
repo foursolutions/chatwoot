@@ -37,11 +37,22 @@ def verify():
 
 @app.route("/webhook", methods=["POST"])
 def receive_message():
+    # First, get the JSON from the request
     payload = request.get_json(force=True)
+
+    # If payload is a string (double‐encoded JSON), decode it once more:
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except Exception as e:
+            # If parsing fails, just log and return 200
+            print("[WARN] Could not json.loads(payload):", e, "payload was:", payload)
+            return Response(status=200)
+
     print(">>>> RAW INCOMING JSON:", json.dumps(payload, indent=2))
 
     # ───────────────────────────────────────────────────────────
-    # 1) Try the “Facebook‐style” nested format:
+    # 1) Try “Facebook‐style” nested format:
     #    payload["entry"][0]["changes"][0]["value"]["messages"]
     # ───────────────────────────────────────────────────────────
     messages = []
@@ -55,14 +66,14 @@ def receive_message():
         from_whatsapp = True
 
     # ───────────────────────────────────────────────────────────
-    # 2) If not found, check if this is 1msg’s “direct” format:
+    # 2) Otherwise check if this is 1msg’s “direct” format:
     #    payload["messages"] is a top‐level array
     # ───────────────────────────────────────────────────────────
     elif "messages" in payload and isinstance(payload["messages"], list):
         messages = payload["messages"]
         from_whatsapp = True
 
-    # If still no messages, just return 200
+    # If no messages found, just return 200
     if not messages:
         return Response(status=200)
 
@@ -71,7 +82,7 @@ def receive_message():
     # ───────────────────────────────────────────────────────────
     message = messages[0]
 
-    # Depending on source, “from” phone might be in message["from"] or message["author"]
+    # Depending on source, “from” phone might be under message["from"] or message["author"]
     raw_from = ""
     if "from" in message:
         raw_from = message.get("from", "")
@@ -79,7 +90,7 @@ def receive_message():
         raw_from = message.get("author", "")
     from_number = raw_from.split("@")[0] if "@" in raw_from else raw_from
 
-    # Determine msg_type and text_body:
+    # Determine message type & text body
     msg_type = message.get("type", "")
     text_body = ""
 
@@ -87,20 +98,20 @@ def receive_message():
     if msg_type == "text" and "text" in message:
         text_body = message["text"]["body"].strip().lower()
 
-    # If it’s 1msg’s “chat” format: message["type"] == "chat", message["body"]
+    # If it’s 1msg’s format for a plain chat: message["type"] == "chat"
     elif msg_type == "chat" and "body" in message:
         text_body = message["body"].strip().lower()
-        msg_type = "text"  # normalize to "text"
+        msg_type = "text"  # normalize it
 
     # ───────────────────────────────────────────────────────────
-    # 4) Handle “reset” command
+    # 4) Handle “reset”
     # ───────────────────────────────────────────────────────────
     if msg_type == "text" and text_body == "reset":
         clear_user_state("car", from_number)
         clear_user_state("bedbug", from_number)
         clear_user_state("mold", from_number)
 
-        # Send the approved main_menu_v2 template
+        # Send main_menu_v2 template
         send_template_message(
             to=from_number,
             template_name=MAIN_MENU_TEMPLATE,
@@ -110,21 +121,20 @@ def receive_message():
 
     # ───────────────────────────────────────────────────────────
     # 5) Handle quick‐reply BUTTON payloads
-    #    - Facebook style: msg_type == "button", nested message["button"]["payload"]
-    #    - 1msg style minimal: msg_type == "button", but no nested "button"
+    #    - Facebook style: msg_type == "button" with nested message["button"]["payload"]
+    #    - 1msg style minimal: msg_type == "button" but no nested "button"
+    #    - 1msg style interactive: msg_type == "interactive" with interactive.button_reply.id
     # ───────────────────────────────────────────────────────────
     if msg_type == "button":
-        # Try nested payload first
+        # First, check nested "button" structure
         if "button" in message and isinstance(message["button"], dict) and "payload" in message["button"]:
             button_id = message["button"]["payload"]
         else:
-            # Fallback: use the raw body text as button_id
+            # Fallback to raw "body" text
             button_id = message.get("body", "").strip().lower()
 
-        # Normalize button_id to lowercase
         button_id = button_id.lower()
 
-        # Check which button was pressed:
         if button_id in ["help_pest", "need help on pest!"]:
             set_user_state("car", from_number, {})
             return handle_car_fumigation_flow(from_number, message, API_KEY, BASE_URL)
@@ -142,7 +152,7 @@ def receive_message():
             })
             return Response(status=200)
 
-        # Unrecognized button payload
+        # Unrecognized button fallback
         send_text_message({
             "to": from_number,
             "type": "text",
@@ -151,8 +161,37 @@ def receive_message():
         })
         return Response(status=200)
 
+    # 1msg’s “interactive” style with button_reply (better than “button”)
+    if msg_type == "interactive" and "interactive" in message:
+        ir = message["interactive"]
+        if ir.get("type") == "button_reply" and "button_reply" in ir:
+            button_id = ir["button_reply"].get("id", "").strip().lower()
+            if button_id in ["help_pest"]:
+                set_user_state("car", from_number, {})
+                return handle_car_fumigation_flow(from_number, message, API_KEY, BASE_URL)
+            if button_id in ["help_mold"]:
+                set_user_state("mold", from_number, {})
+                return handle_mold_flow(from_number, message, API_KEY, BASE_URL)
+            if button_id in ["live_human"]:
+                send_text_message({
+                    "to": from_number,
+                    "type": "text",
+                    "text": {"body": "Sure—one of our agents will be with you shortly."},
+                    "messaging_product": "whatsapp"
+                })
+                return Response(status=200)
+
+            # Unrecognized interactive payload
+            send_text_message({
+                "to": from_number,
+                "type": "text",
+                "text": {"body": "Sorry, I didn’t understand that button. Type ‘reset’ to start over."},
+                "messaging_product": "whatsapp"
+            })
+            return Response(status=200)
+
     # ───────────────────────────────────────────────────────────
-    # 6) Delegate to flows if user is already inside one
+    # 6) Delegate to flows if user is mid‐flow
     # ───────────────────────────────────────────────────────────
     user_state_car = get_user_state("car", from_number)
     if user_state_car:
@@ -167,7 +206,7 @@ def receive_message():
         return handle_mold_flow(from_number, message, API_KEY, BASE_URL)
 
     # ───────────────────────────────────────────────────────────
-    # 7) Otherwise, any other text: show main menu template
+    # 7) Otherwise, any other text → show main menu template
     # ───────────────────────────────────────────────────────────
     if msg_type == "text":
         send_template_message(

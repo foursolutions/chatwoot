@@ -56,7 +56,6 @@ def receive_message():
     msg_type = entry.get("type", "")
 
     # ── STEP 2 ── Extract from_number
-    #  Depending on 1msg’s webhook, the phone may appear under "from" or under "author"
     raw_from = entry.get("from", "") or entry.get("author", "")
     from_number = raw_from.split("@")[0] if "@" in raw_from else raw_from
 
@@ -79,27 +78,18 @@ def receive_message():
         return Response(status=200)
 
     # ── STEP 5 ── Handle button clicks. Two possible formats:
-    #   • Old style:   "type":"button"   →  entry["button"]["payload"]
+    #   • Old style:   "type":"button"   →  entry["body"] is the button label
     #   • New style:   "type":"interactive" → entry["interactive"]["button_reply"]["id"]
     if msg_type == "button":  # 1msg’s older “quick‐reply” style
-        # Example payload snippet:
-        # {
-        #   "type": "button",
-        #   "button": {
-        #       "payload": "help_pest",
-        #       "text": "Need help on Pest!"
-        #   },
-        #   "from": "6587788080@c.us", ...
-        # }
-        button_section = entry.get("button", {})
-        button_id = button_section.get("payload", "")
-        if button_id == "help_pest":
+        payload_text = entry.get("body", "").strip()
+        payload_lower = payload_text.lower()
+        if payload_lower in ["need help on pest!", "help_pest"]:
             set_user_state("car", from_number, {})
             return handle_car_fumigation_flow(from_number, entry, API_KEY, BASE_URL)
-        if button_id == "help_mold":
+        if payload_lower in ["need help on mold!", "help_mold"]:
             set_user_state("mold", from_number, {})
             return handle_mold_flow(from_number, entry, API_KEY, BASE_URL)
-        if button_id == "live_human":
+        if payload_lower == "live_human":
             send_text_message({
                 "to": from_number,
                 "type": "text",
@@ -109,18 +99,6 @@ def receive_message():
             return Response(status=200)
 
     if msg_type == "interactive":  # 1msg’s newer “interactive” style
-        # Example payload snippet:
-        # {
-        #   "type": "interactive",
-        #   "interactive": {
-        #     "type": "button_reply",
-        #     "button_reply": {
-        #         "id": "help_pest",
-        #         "title": "Need help on Pest!"
-        #     }
-        #   },
-        #   "from": "6587788080@c.us", ...
-        # }
         interactive = entry.get("interactive", {})
         button_reply = interactive.get("button_reply", None)
         if button_reply:

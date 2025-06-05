@@ -372,12 +372,22 @@ def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
 
     # Helper to extract quick‐reply button payload
     def extract_button_payload(msg: dict) -> str:
+        # 1) If there really is a nested “button” dict, use its payload:
+        if msg.get("type") == "button" and isinstance(msg.get("button"), dict):
+            return msg["button"].get("payload", "")
+
+        # 2) Otherwise, when type == "button" with no nested msg["button"],
+        #    the tapped button text is in msg["body"]:
         if msg.get("type") == "button":
-            return msg["button"]["payload"]
-        if (msg.get("type") == "interactive" 
+            return msg.get("body", "")
+
+        # 3) If this is an interactive-list‐reply, extract the id:
+        if (msg.get("type") == "interactive"
                 and msg["interactive"].get("type") == "button_reply"):
-            return msg["interactive"]["button_reply"]["id"]
+            return msg["interactive"]["button_reply"].get("id", "")
+
         return ""
+
 
     # ─── A) If user taps any FAQ (list_reply ID starts with "bbfaq_"), show answer ───
     if msg_type == "interactive" and message["interactive"].get("type") == "list_reply":

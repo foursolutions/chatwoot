@@ -424,10 +424,20 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
     msg_type = message.get("type")  # "text", "button", or "interactive"
 
     def extract_button_payload(msg: dict) -> str:
+        # 1) If we really have a nested “button” object with a “payload” field, use it:
+        if msg.get("type") == "button" and isinstance(msg.get("button"), dict):
+            return msg["button"].get("payload", "")
+
+        # 2) Otherwise, if type == "button" but no nested “button” object,
+        #    the user’s tapped button text is in msg["body"]:
         if msg.get("type") == "button":
-            return msg["button"]["payload"]
-        if msg.get("type") == "interactive" and msg["interactive"].get("type") == "button_reply":
-            return msg["interactive"]["button_reply"]["id"]
+            return msg.get("body", "")
+
+        # 3) If this is an interactive-button‐reply (list reply), grab that ID:
+        if (msg.get("type") == "interactive"
+                and msg["interactive"].get("type") == "button_reply"):
+            return msg["interactive"]["button_reply"].get("id", "")
+
         return ""
 
     # ─── A) FAQ Handling at ANY STEP ─────────────────────────────────────────────

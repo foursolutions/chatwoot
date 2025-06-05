@@ -18,7 +18,7 @@ VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN", "")
 API_KEY      = os.environ.get("1MSG_API_KEY", "")
 BASE_URL     = os.environ.get("1MSG_BASE_URL", "")  # e.g. https://api.1msg.io/VAN123456
 
-# Webhook verification (GET)
+# ───── Webhook verification ─────
 @app.route("/webhook", methods=["GET"])
 def verify():
     mode      = request.args.get("hub.mode")
@@ -28,35 +28,51 @@ def verify():
         return challenge, 200
     return "Verification token mismatch", 403
 
-# Main webhook endpoint (POST)
+# ───── Main webhook endpoint (POST) ─────
 @app.route("/webhook", methods=["POST"])
 def receive_message():
     payload = request.get_json(force=True)
     print(">>>> RAW INCOMING JSON:", json.dumps(payload, indent=2))
 
-    entry    = payload.get("entry", [{}])[0]
-    changes  = entry.get("changes", [{}])[0]
-    value    = changes.get("value", {})
-    messages = value.get("messages", [])
+    # ─── Extract messages array ───
+    # 1msg sometimes wraps under entry/changes/value, sometimes sends top‐level "messages".
+    messages = None
+    if isinstance(payload.get("entry"), list):
+        # Original pattern: payload["entry"][0]["changes"][0]["value"]["messages"]
+        entry   = payload.get("entry", [{}])[0]
+        changes = entry.get("changes", [{}])[0]
+        value   = changes.get("value", {})
+        messages = value.get("messages", [])
+    elif isinstance(payload.get("messages"), list):
+        # Dev-kit format: top‐level "messages": [...]
+        messages = payload.get("messages", [])
+    else:
+        messages = []
+
     if not messages:
         return Response(status=200)
 
-    message    = messages[0]
-    raw_from   = message.get("from", "")
+    message_raw = messages[0]
+    # 1msg uses either "from" or "chatId"/"author". We normalize to from_number:
+    raw_from = message_raw.get("from") or message_raw.get("author") or ""
     from_number = raw_from.split("@")[0] if "@" in raw_from else raw_from
-    msg_type   = message.get("type", "")
-    text_body  = ""
-    if msg_type in ("text", "chat"):
-        # 1msg sometimes uses "type":"chat" for free‐text
-        text_body = message.get("text", {}).get("body", "").strip().lower()
 
-    # ─────── CHANGE IS HERE ───────
-    # If user sends “reset” (msg_type may be "text" or "chat"), clear states & send main menu
-    if msg_type in ("text", "chat") and text_body == "reset":
+    msg_type = message_raw.get("type", "")
+    # Grab the literal "body" field if present
+    body_text = message_raw.get("body", "").strip().lower()
+    # For older style, if msg_type == "text", the actual body is nested under message["text"]["body"]:
+    if msg_type == "text" and "text" in message_raw:
+        body_text = message_raw["text"].get("body", "").strip().lower()
+
+    # ─────── 1) “reset” check: ANY type that contains a lowercase "reset" in the payload ───────
+    if body_text == "reset":
+        print("[DEBUG] RESET branch hit (body_text=='reset'), msg_type=", msg_type)
+        # Clear all flow states:
         clear_user_state("car", from_number)
         clear_user_state("bedbug", from_number)
         clear_user_state("mold", from_number)
 
+        # Send main‐menu template back via 1msg
         interactive_payload = {
             "to": from_number,
             "type": "interactive",
@@ -101,15 +117,16 @@ def receive_message():
         send_interactive_message(interactive_payload)
         return Response(status=200)
 
-    # If user replies by tapping a button:
+    # ─────── 2) “button” presses ───────
     if msg_type == "button":
-        button_id = message["button"]["payload"]
+        button_id = message_raw["button"].get("payload", "")
+        print(f"[DEBUG] BUTTON payload = {button_id}")
         if button_id == "help_pest":
             set_user_state("car", from_number, {})
-            return handle_car_fumigation_flow(from_number, message, API_KEY, BASE_URL)
+            return handle_car_fumigation_flow(from_number, message_raw, API_KEY, BASE_URL)
         if button_id == "help_mold":
             set_user_state("mold", from_number, {})
-            return handle_mold_flow(from_number, message, API_KEY, BASE_URL)
+            return handle_mold_flow(from_number, message_raw, API_KEY, BASE_URL)
         if button_id == "live_human":
             send_text_message({
                 "to": from_number,
@@ -119,21 +136,24 @@ def receive_message():
             })
             return Response(status=200)
 
-    # If user sends free‐text and is already in a flow, delegate to the correct flow:
-    user_state_car   = get_user_state("car", from_number)
-    if user_state_car:
-        return handle_car_fumigation_flow(from_number, message, API_KEY, BASE_URL)
+    # ─────── 3) Already in a “pest” flow? ───────
+    user_state_car = get_user_state("car", from_number)
+    if user_state_car is not None:
+        return handle_car_fumigation_flow(from_number, message_raw, API_KEY, BASE_URL)
 
+    # ─────── 4) Already in a “bedbug” flow? ───────
     user_state_bedbug = get_user_state("bedbug", from_number)
-    if user_state_bedbug:
-        return handle_bedbug_flow(from_number, message, API_KEY, BASE_URL)
+    if user_state_bedbug is not None:
+        return handle_bedbug_flow(from_number, message_raw, API_KEY, BASE_URL)
 
-    user_state_mold  = get_user_state("mold", from_number)
-    if user_state_mold:
-        return handle_mold_flow(from_number, message, API_KEY, BASE_URL)
+    # ─────── 5) Already in a “mold” flow? ───────
+    user_state_mold = get_user_state("mold", from_number)
+    if user_state_mold is not None:
+        return handle_mold_flow(from_number, message_raw, API_KEY, BASE_URL)
 
-    # Otherwise (any other text, since we didn’t match “reset”), show main menu:
-    if msg_type in ("text", "chat"):
+    # ─────── 6) Any other free-text (not “reset”) → send main menu ───────
+    if msg_type in ("text", "chat", "chat") or body_text:
+        print("[DEBUG] Falling back to “show main menu” for:", body_text, "msg_type=", msg_type)
         interactive_payload = {
             "to": from_number,
             "type": "interactive",
@@ -179,4 +199,5 @@ def receive_message():
         return Response(status=200)
 
     return Response(status=200)
-# end dispatcher.py
+
+# ───── End of dispatcher.py ─────

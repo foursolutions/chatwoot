@@ -16,6 +16,7 @@ from flows.mold import handle_mold_flow
 
 app = Flask(__name__)
 
+# ── Load environment variables ─────────────────────────────────────────────────
 VERIFY_TOKEN       = os.environ.get("VERIFY_TOKEN", "")
 API_KEY            = os.environ.get("1MSG_API_KEY", "")
 BASE_URL           = os.environ.get("1MSG_BASE_URL", "")        # e.g. https://api.1msg.io/VAN123456
@@ -23,7 +24,7 @@ NAMESPACE          = os.environ.get("1MSG_NAMESPACE", "")       # e.g. 94d66366_
 LANG_CODE          = os.environ.get("1MSG_LANG_CODE", "en")     # e.g. "en"
 MAIN_MENU_TEMPLATE = os.environ.get("MAIN_MENU_TEMPLATE", "main_menu_v2")
 
-# Webhook verification (GET)
+# ── Webhook verification (GET) ────────────────────────────────────────────────
 @app.route("/webhook", methods=["GET"])
 def verify():
     mode      = request.args.get("hub.mode")
@@ -33,63 +34,69 @@ def verify():
         return challenge, 200
     return "Verification token mismatch", 403
 
-# Main webhook endpoint (POST)
+# ── Main webhook endpoint (POST) ──────────────────────────────────────────────
 @app.route("/webhook", methods=["POST"])
 def receive_message():
-    raw = request.get_data(as_text=True)
+    raw_payload = request.get_data(as_text=True)
     try:
-        payload = json.loads(raw)
+        payload = json.loads(raw_payload)
     except:
         payload = request.get_json(force=True)
 
     print(">>>> RAW INCOMING JSON:", json.dumps(payload, indent=2))
 
-    # ── STEP 0 ── Ignore any "ack" payload from 1msg (those are delivery/read receipts)
+    # ── Step 0: ignore any “ack” (delivery/read receipts) from 1msg ───────────
     if "ack" in payload:
         return Response(status=200)
 
-    # ── STEP 1 ── If there's no "messages" array, nothing to do
+    # ── Step 1: if there’s no “messages” array, nothing to do ─────────────────
     if "messages" not in payload or not isinstance(payload["messages"], list):
         return Response(status=200)
 
     entry = payload["messages"][0]
     msg_type = entry.get("type", "")
 
-    # ── STEP 2 ── Extract from_number
+    # ── Step 2: extract the “from” phone number ───────────────────────────────
     raw_from = entry.get("from", "") or entry.get("author", "")
     from_number = raw_from.split("@")[0] if "@" in raw_from else raw_from
 
-    # ── STEP 3 ── If this is a plain‐text chat message, capture text_body
+    # ── Step 3: if this is plain‐text chat (type=="chat"), grab text_body ────
     text_body = ""
     if msg_type == "chat":
         text_body = entry.get("body", "").strip().lower()
 
-    # ── STEP 4 ── If user typed "reset", clear states and send main menu template
+    # ── Step 4: if user typed “reset”, clear all states and send main-menu ───
     if msg_type == "chat" and text_body == "reset":
         clear_user_state("car", from_number)
         clear_user_state("bedbug", from_number)
         clear_user_state("mold", from_number)
 
+        # Send the main menu as a template
         send_template_message(
             to=from_number,
+            namespace=NAMESPACE,
             template_name=MAIN_MENU_TEMPLATE,
-            template_params=["there"]
+            params=[{"type": "body", "parameters": [{"type": "text", "text": "there"}]}],
+            language={"policy": "deterministic", "code": LANG_CODE}
         )
         return Response(status=200)
 
-    # ── STEP 5 ── Handle button clicks. Two possible formats:
-    #   • Old style:   "type":"button"   →  entry["body"] is the button label
-    #   • New style:   "type":"interactive" → entry["interactive"]["button_reply"]["id"]
-    if msg_type == "button":  # 1msg’s older “quick‐reply” style
-        payload_text = entry.get("body", "").strip()
-        payload_lower = payload_text.lower()
-        if payload_lower in ["need help on pest!", "help_pest"]:
+    # ── Step 5: handle button clicks (old‐style “type":"button” quick‐reply) ──
+    if msg_type == "button":
+        payload_text = entry.get("body", "").strip().lower()
+        # “Need help on Pest!” or custom payload “help_pest”
+        if payload_text in ["need help on pest!", "help_pest"]:
+            # Initialize “car” flow, store an empty dict as state
             set_user_state("car", from_number, {})
-            return handle_car_fumigation_flow(from_number, entry, API_KEY, BASE_URL)
-        if payload_lower in ["need help on mold!", "help_mold"]:
+            user_state = get_user_state("car", from_number)
+            return handle_car_fumigation_flow(from_number, entry, user_state, BASE_URL)
+        # “Need help on Mold!” or custom payload “help_mold”
+        if payload_text in ["need help on mold!", "help_mold"]:
             set_user_state("mold", from_number, {})
-            return handle_mold_flow(from_number, entry, API_KEY, BASE_URL)
-        if payload_lower == "live_human":
+            user_state = get_user_state("mold", from_number)
+            return handle_mold_flow(from_number, entry, user_state, BASE_URL)
+        # “Live Human”
+        if payload_text in ["live_human"]:
             send_text_message({
                 "to": from_number,
                 "type": "text",
@@ -98,17 +105,21 @@ def receive_message():
             })
             return Response(status=200)
 
-    if msg_type == "interactive":  # 1msg’s newer “interactive” style
+    # ── Step 5b: handle new‐style interactive (1msg) payloads ────────────────
+    if msg_type == "interactive":
         interactive = entry.get("interactive", {})
-        button_reply = interactive.get("button_reply", None)
+        # “button_reply” includes .get("id")
+        button_reply = interactive.get("button_reply")
         if button_reply:
             button_id = button_reply.get("id", "")
             if button_id == "help_pest":
                 set_user_state("car", from_number, {})
-                return handle_car_fumigation_flow(from_number, entry, API_KEY, BASE_URL)
+                user_state = get_user_state("car", from_number)
+                return handle_car_fumigation_flow(from_number, entry, user_state, BASE_URL)
             if button_id == "help_mold":
                 set_user_state("mold", from_number, {})
-                return handle_mold_flow(from_number, entry, API_KEY, BASE_URL)
+                user_state = get_user_state("mold", from_number)
+                return handle_mold_flow(from_number, entry, user_state, BASE_URL)
             if button_id == "live_human":
                 send_text_message({
                     "to": from_number,
@@ -118,25 +129,29 @@ def receive_message():
                 })
                 return Response(status=200)
 
-    # ── STEP 6 ── If user is in a “car” flow already (free‐text), delegate to that flow
+    # ── Step 6: if user is “in” the car flow already, delegate to that flow ───
     user_state_car = get_user_state("car", from_number)
-    if user_state_car:
-        return handle_car_fumigation_flow(from_number, entry, API_KEY, BASE_URL)
+    if user_state_car is not None:
+        return handle_car_fumigation_flow(from_number, entry, user_state_car, BASE_URL)
 
+    # ── Step 6b: if user is “in” the bedbug flow, delegate ──────────────────
     user_state_bedbug = get_user_state("bedbug", from_number)
-    if user_state_bedbug:
-        return handle_bedbug_flow(from_number, entry, API_KEY, BASE_URL)
+    if user_state_bedbug is not None:
+        return handle_bedbug_flow(from_number, entry, user_state_bedbug, BASE_URL)
 
+    # ── Step 6c: if user is “in” the mold flow, delegate ────────────────────
     user_state_mold = get_user_state("mold", from_number)
-    if user_state_mold:
-        return handle_mold_flow(from_number, entry, API_KEY, BASE_URL)
+    if user_state_mold is not None:
+        return handle_mold_flow(from_number, entry, user_state_mold, BASE_URL)
 
-    # ── STEP 7 ── Every other simple chat/text → show the main menu again
+    # ── Step 7: any other plain chat/text → re‐send main menu template ────────
     if msg_type == "chat":
         send_template_message(
             to=from_number,
+            namespace=NAMESPACE,
             template_name=MAIN_MENU_TEMPLATE,
-            template_params=["there"]
+            params=[{"type": "body", "parameters": [{"type": "text", "text": "there"}]}],
+            language={"policy": "deterministic", "code": LANG_CODE}
         )
         return Response(status=200)
 

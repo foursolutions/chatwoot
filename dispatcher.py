@@ -16,17 +16,16 @@ from flows.mold import handle_mold_flow
 
 app = Flask(__name__)
 
-VERIFY_TOKEN     = os.environ.get("VERIFY_TOKEN", "")
-API_KEY          = os.environ.get("1MSG_API_KEY", "")
-BASE_URL         = os.environ.get("1MSG_BASE_URL", "")     # e.g. https://api.1msg.io/VAN123456
-NAMESPACE        = os.environ.get("1MSG_NAMESPACE", "")     # e.g. 94d66366_9ec1_43a3_a84c_46039bd33ef5
-LANG_CODE        = os.environ.get("1MSG_LANG_CODE", "en")   # e.g. "en"
+VERIFY_TOKEN       = os.environ.get("VERIFY_TOKEN", "")
+API_KEY            = os.environ.get("1MSG_API_KEY", "")
+BASE_URL           = os.environ.get("1MSG_BASE_URL", "")        # e.g. https://api.1msg.io/VAN123456
+NAMESPACE          = os.environ.get("1MSG_NAMESPACE", "")       # e.g. 94d66366_9ec1_43a3_a84c_46039bd33ef5
+LANG_CODE          = os.environ.get("1MSG_LANG_CODE", "en")     # e.g. "en"
 MAIN_MENU_TEMPLATE = os.environ.get("MAIN_MENU_TEMPLATE", "main_menu_v2")
 
 # Webhook verification (GET)
 @app.route("/webhook", methods=["GET"])
 def verify():
-    # Facebook/WhatsApp/1msg verification handshake
     mode      = request.args.get("hub.mode")
     token     = request.args.get("hub.verify_token")
     challenge = request.args.get("hub.challenge")
@@ -38,8 +37,6 @@ def verify():
 @app.route("/webhook", methods=["POST"])
 def receive_message():
     raw = request.get_data(as_text=True)
-
-    # If 1msg sometimes sends a raw string instead of JSON object, try to parse:
     try:
         payload = json.loads(raw)
     except:
@@ -47,34 +44,33 @@ def receive_message():
 
     print(">>>> RAW INCOMING JSON:", json.dumps(payload, indent=2))
 
-    # ── STEP 0 ── Ignore any "ack" payload. If there's an "ack" field, 1msg is simply reporting
-    #              that a template/text we sent earlier was delivered. We don't want to reply again.
+    # ── STEP 0 ── Ignore any "ack" payload from 1msg (those are delivery/read receipts)
     if "ack" in payload:
         return Response(status=200)
 
-    # ── STEP 1 ── If there's no "messages" array (empty or missing), nothing to do.
+    # ── STEP 1 ── If there's no "messages" array, nothing to do
     if "messages" not in payload or not isinstance(payload["messages"], list):
         return Response(status=200)
 
     entry = payload["messages"][0]
     msg_type = entry.get("type", "")
 
-    # ── STEP 2 ── Extract phone number ("from"). 1msg will send "author" or "chatId" in most webhooks.
+    # ── STEP 2 ── Extract from_number
+    #  Depending on 1msg’s webhook, the phone may appear under "from" or under "author"
     raw_from = entry.get("from", "") or entry.get("author", "")
     from_number = raw_from.split("@")[0] if "@" in raw_from else raw_from
 
-    # ── STEP 3 ── Grasp the textual body if this is a chat/text
+    # ── STEP 3 ── If this is a plain‐text chat message, capture text_body
     text_body = ""
     if msg_type == "chat":
         text_body = entry.get("body", "").strip().lower()
 
-    # ── STEP 4 ── If user literally typed "reset", clear states & send main menu template
+    # ── STEP 4 ── If user typed "reset", clear states and send main menu template
     if msg_type == "chat" and text_body == "reset":
         clear_user_state("car", from_number)
         clear_user_state("bedbug", from_number)
         clear_user_state("mold", from_number)
 
-        # Send the template menu (main_menu_v2) via send_template_message:
         send_template_message(
             to=from_number,
             template_name=MAIN_MENU_TEMPLATE,
@@ -82,10 +78,50 @@ def receive_message():
         )
         return Response(status=200)
 
-    # ── STEP 5 ── If user tapped a quick‐reply button, 1msg will send type="interactive"
-    if msg_type == "interactive":
+    # ── STEP 5 ── Handle button clicks. Two possible formats:
+    #   • Old style:   "type":"button"   →  entry["button"]["payload"]
+    #   • New style:   "type":"interactive" → entry["interactive"]["button_reply"]["id"]
+    if msg_type == "button":  # 1msg’s older “quick‐reply” style
+        # Example payload snippet:
+        # {
+        #   "type": "button",
+        #   "button": {
+        #       "payload": "help_pest",
+        #       "text": "Need help on Pest!"
+        #   },
+        #   "from": "6587788080@c.us", ...
+        # }
+        button_section = entry.get("button", {})
+        button_id = button_section.get("payload", "")
+        if button_id == "help_pest":
+            set_user_state("car", from_number, {})
+            return handle_car_fumigation_flow(from_number, entry, API_KEY, BASE_URL)
+        if button_id == "help_mold":
+            set_user_state("mold", from_number, {})
+            return handle_mold_flow(from_number, entry, API_KEY, BASE_URL)
+        if button_id == "live_human":
+            send_text_message({
+                "to": from_number,
+                "type": "text",
+                "text": {"body": "Sure—one of our agents will be with you shortly."},
+                "messaging_product": "whatsapp"
+            })
+            return Response(status=200)
+
+    if msg_type == "interactive":  # 1msg’s newer “interactive” style
+        # Example payload snippet:
+        # {
+        #   "type": "interactive",
+        #   "interactive": {
+        #     "type": "button_reply",
+        #     "button_reply": {
+        #         "id": "help_pest",
+        #         "title": "Need help on Pest!"
+        #     }
+        #   },
+        #   "from": "6587788080@c.us", ...
+        # }
         interactive = entry.get("interactive", {})
-        # There are two kinds: button_reply or list_reply; here we only care about button_reply
         button_reply = interactive.get("button_reply", None)
         if button_reply:
             button_id = button_reply.get("id", "")
@@ -104,8 +140,7 @@ def receive_message():
                 })
                 return Response(status=200)
 
-    # ── STEP 6 ── If user is already in a car flow and they sent free text (type=chat),
-    #              delegate to car_fumigation.
+    # ── STEP 6 ── If user is in a “car” flow already (free‐text), delegate to that flow
     user_state_car = get_user_state("car", from_number)
     if user_state_car:
         return handle_car_fumigation_flow(from_number, entry, API_KEY, BASE_URL)
@@ -118,7 +153,7 @@ def receive_message():
     if user_state_mold:
         return handle_mold_flow(from_number, entry, API_KEY, BASE_URL)
 
-    # ── STEP 7 ── Otherwise, if this is a plain chat/text (not in a flow), send the main_menu_v2
+    # ── STEP 7 ── Every other simple chat/text → show the main menu again
     if msg_type == "chat":
         send_template_message(
             to=from_number,

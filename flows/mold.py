@@ -49,7 +49,7 @@ def send_mold_removal_faq(to: str, phone_number_id: str):
             "footer": {"text": "Tap an option"},
             "action": {
                 "button": "Select FAQ",
-                "sections": [{
+                "sections": [ {
                     "title": "FAQ Questions",
                     "rows": [
                         {
@@ -83,7 +83,7 @@ def send_mold_removal_faq(to: str, phone_number_id: str):
                             "description": "Payment methods accepted"
                         }
                     ]
-                }]
+                } ]
             }
         }
     }
@@ -141,7 +141,12 @@ def process_mold_faq_response(to: str, faq_id: str):
         )
     }
     answer = faq_answers.get(faq_id, "Sorry, no information is available for that question.")
-    send_text_message(to, answer)
+    send_text_message({
+        "to": to,
+        "type": "text",
+        "messaging_product": "whatsapp",
+        "text": {"body": answer}
+    })
 
 
 # ─── 2) “Request a Quotation” / Option Prompt ─────────────────────────────────
@@ -235,14 +240,14 @@ def send_bedroom_count_prompt(to: str, phone_number_id: str):
             "footer": {"text": "Select an option"},
             "action": {
                 "button": "Select Count",
-                "sections": [{
+                "sections": [ {
                     "title": "Bedroom Count",
                     "rows": [
                         {"id": "bedroom_count_1", "title": "1 bedroom",                 "description": "One bedroom affected"},
                         {"id": "bedroom_count_2", "title": "2 bedrooms",                "description": "Two bedrooms affected"},
                         {"id": "bedroom_count_3", "title": "3 bedrooms or more",        "description": "Three or more"}
                     ]
-                }]
+                } ]
             }
         }
     }
@@ -269,14 +274,14 @@ def send_bathroom_count_prompt(to: str, phone_number_id: str):
             "footer": {"text": "Select an option"},
             "action": {
                 "button": "Select Count",
-                "sections": [{
+                "sections": [ {
                     "title": "Bathroom Count",
                     "rows": [
                         {"id": "bathroom_count_1", "title": "1 bathroom",                 "description": "One bathroom affected"},
                         {"id": "bathroom_count_2", "title": "2 bathrooms",                "description": "Two bathrooms affected"},
                         {"id": "bathroom_count_3", "title": "3 bathrooms or more",        "description": "Three or more"}
                     ]
-                }]
+                } ]
             }
         }
     }
@@ -335,7 +340,7 @@ def send_mold_growth_location(to: str, phone_number_id: str):
             "footer": {"text": "Choose an option"},
             "action": {
                 "button": "Select Location",
-                "sections": [{
+                "sections": [ {
                     "title": "Growth Options",
                     "rows": [
                         {"id": "growth_ceiling", "title": "Ceiling only",       "description": "Mold on ceiling"},
@@ -343,7 +348,7 @@ def send_mold_growth_location(to: str, phone_number_id: str):
                         {"id": "growth_both",    "title": "Walls and ceiling",  "description": "Mold on both"},
                         {"id": "growth_others",  "title": "Others",             "description": "Enter custom location"}
                     ]
-                }]
+                } ]
             }
         }
     }
@@ -426,7 +431,7 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
         return ""
 
     # ─── A) FAQ Handling at ANY STEP ─────────────────────────────────────────────
-    if msg_type == "interactive" and message["interactive"].get("type") == "list_reply":
+    if msg_type == "interactive" and message.get("interactive", {}).get("type") == "list_reply":
         choice_id = message["interactive"]["list_reply"]["id"]
         if choice_id.startswith("mfaq_"):
             print(f"[DEBUG] handle_mold_flow: LIST payload='{choice_id}' from {from_number}")
@@ -486,10 +491,12 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
                     )
                     return
 
-                send_text_message(
-                    to=from_number,
-                    body="Sorry, I didn’t understand that. Type 'reset' to start over."
-                )
+                send_text_message({
+                    "to": from_number,
+                    "type": "text",
+                    "messaging_product": "whatsapp",
+                    "text": {"body": "Sorry, I didn’t understand that. Type 'reset' to start over."}
+                })
                 return
 
             # C) “Add Another Area?” (step == "mold_waiting_add_area_confirmation")
@@ -512,10 +519,12 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
                     )
                     return
 
-                send_text_message(
-                    to=from_number,
-                    body="Please select 'Yes' or 'No'."
-                )
+                send_text_message({
+                    "to": from_number,
+                    "type": "text",
+                    "messaging_product": "whatsapp",
+                    "text": {"body": "Please select 'Yes' or 'No'."}
+                })
                 return
 
             # D) Summary Confirmation (“Yes”/“No”) (step == "mold_waiting_confirmation")
@@ -533,16 +542,18 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
                     )
                     return
 
-                send_text_message(
-                    to=from_number,
-                    body="Please select 'Yes' or 'No'."
-                )
+                send_text_message({
+                    "to": from_number,
+                    "type": "text",
+                    "messaging_product": "whatsapp",
+                    "text": {"body": "Please select 'Yes' or 'No'."}
+                })
                 return
 
     # ─── 2) Handle interactive LIST replies (“interactive.list_reply”) ─────────────
-    if msg_type == "interactive" and message["interactive"].get("type") == "list_reply":
-        choice_id = message["interactive"]["list_reply"]["id"]
-        choice_title = message["interactive"]["list_reply"].get("title", "")
+    if msg_type == "interactive" and message.get("interactive", {}).get("type") == "list_reply":
+        choice_id = message.get("interactive", {}).get("list_reply", {}).get("id", "")
+        choice_title = message.get("interactive", {}).get("list_reply", {}).get("title", "")
         print(f"[DEBUG] handle_mold_flow: LIST payload='{choice_id}' from {from_number}")
         state = user_state or {}
         step = state.get("step", "")
@@ -620,7 +631,12 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
             return
 
     # ─── 3) FALLBACK: If none of the above matched ──────────────────────────────
-    send_text_message(to=from_number, body="Sorry, I can’t handle that type of message. Type 'reset' to start over.")
+    send_text_message({
+        "to": from_number,
+        "type": "text",
+        "messaging_product": "whatsapp",
+        "text": {"body": "Sorry, I can’t handle that type of message. Type 'reset' to start over."}
+    })
 
 
 # ─── 9) INTERNAL: Alert Company & Ask for Photos (after “Yes” on summary) ───────
@@ -664,8 +680,8 @@ def alert_internal_and_ask_photos(client_number: str):
     # Send alert to company number and chatbot number
     company_no = "+6587788080"
     bot_no     = "+6588662359"
-    send_text_message(to=company_no, body=summary_text)
-    send_text_message(to=bot_no,      body=summary_text)
+    send_text_message({"to": company_no, "type": "text", "messaging_product": "whatsapp", "text": {"body": summary_text}})
+    send_text_message({"to": bot_no,     "type": "text", "messaging_product": "whatsapp", "text": {"body": summary_text}})
 
     # Prompt end user to upload photos
     prompt_text = (
@@ -675,20 +691,14 @@ def alert_internal_and_ask_photos(client_number: str):
         "capturing the full room or area affected? This helps us provide a rough estimate ahead of time. "
         "Just upload the images here in this chat. 😊"
     )
-    send_text_message(to=client_number, body=prompt_text)
+    send_text_message({"to": client_number, "type": "text", "messaging_product": "whatsapp", "text": {"body": prompt_text}})
 
     # Small delay so the next interactive message doesn’t get dropped
     time.sleep(1)
 
     # “While you wait, here’s our FAQ to learn more about our mold removal service:”
-    send_text_message(
-        to=client_number,
-        body="While you wait, here’s our FAQ to learn more about our mold removal service:"
-    )
-    send_mold_removal_faq(
-        to=client_number,
-        phone_number_id=os.getenv("PHONE_NUMBER_ID")
-    )
+    send_text_message({"to": client_number, "type": "text", "messaging_product": "whatsapp", "text": {"body": "While you wait, here’s our FAQ to learn more about our mold removal service:"}})
+    send_mold_removal_faq(to=client_number, phone_number_id=os.getenv("PHONE_NUMBER_ID"))
 
     # Final internal state
     state["step"] = "mold_waiting_agent"

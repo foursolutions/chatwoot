@@ -115,14 +115,14 @@ def send_bedbug_bedroom_count_prompt(to: str, phone_number_id: str):
             "footer": {"text": "Select an option"},
             "action": {
                 "button": "Select Count",
-                "sections": [{
+                "sections": [ {
                     "title": "Bedroom Count Options",
                     "rows": [
                         {"id": "bedbug_bed_count_1", "title": "1 Bedroom",   "description": "1 Bedroom affected"},
                         {"id": "bedbug_bed_count_2", "title": "2 Bedrooms",  "description": "2 Bedrooms affected"},
                         {"id": "bedbug_bed_count_3", "title": "3+ Bedrooms", "description": "3 or more Bedrooms affected"}
                     ]
-                }]
+                } ]
             }
         }
     }
@@ -150,7 +150,7 @@ def send_bedbug_count_prompt(to: str, phone_number_id: str):
             "footer": {"text": "Select an option"},
             "action": {
                 "button": "Select Count",
-                "sections": [{
+                "sections": [ {
                     "title": "Bedbug Count Options",
                     "rows": [
                         {"id": "bedbug_count_feel",    "title": "Not seen, but felt",      "description": "I have felt them but haven't seen any."},
@@ -159,7 +159,7 @@ def send_bedbug_count_prompt(to: str, phone_number_id: str):
                         {"id": "bedbug_count_more30",  "title": "More than 30 Spotted",    "description": "Over 30 bedbugs."},
                         {"id": "bedbug_count_others",  "title": "Others",                  "description": "Specify approximate number."}
                     ]
-                }]
+                } ]
             }
         }
     }
@@ -257,12 +257,12 @@ def send_bedbug_faq_list(to: str, phone_number_id: str):
         "type": "interactive",
         "interactive": {
             "type": "list",
-            "header": {"type": "text", "text": "Bed Bug FAQ"},
+            "header": {"type": "text", "text": "Bedbug FAQ"},
             "body": {"text": "Select a FAQ question:"},
             "footer": {"text": "Tap an option"},
             "action": {
                 "button": "Select FAQ",
-                "sections": [{
+                "sections": [ {
                     "title": "FAQ Questions",
                     "rows": [
                         {"id": "bbfaq_safe",        "title": "Is it Safe?",          "description": "Kids/Pets: Is the treatment safe?"},
@@ -271,7 +271,7 @@ def send_bedbug_faq_list(to: str, phone_number_id: str):
                         {"id": "bbfaq_preparation", "title": "Preparation",          "description": "How to prepare your space?"},
                         {"id": "bbfaq_payment",     "title": "Payment Options",      "description": "Payment methods accepted"}
                     ]
-                }]
+                } ]
             }
         }
     }
@@ -331,7 +331,12 @@ def process_bedbug_faq_response(to: str, faq_id: str):
     }
 
     answer = faq_answers.get(faq_id, "Sorry, no information is available for that question.")
-    send_text_message(to, answer)
+    send_text_message({
+        "to": to,
+        "type": "text",
+        "messaging_product": "whatsapp",
+        "text": {"body": answer}
+    })
 
     # After sending the answer, re‐send the FAQ list so user can pick another question
     send_bedbug_faq_list(to, os.getenv("PHONE_NUMBER_ID"))
@@ -432,10 +437,12 @@ def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
                     return
 
                 # Unrecognized button on bedbug_option
-                send_text_message(
-                    to=from_number,
-                    body="Sorry, I didn’t understand that. Type 'reset' to start over."
-                )
+                send_text_message({
+                    "to": from_number,
+                    "type": "text",
+                    "messaging_product": "whatsapp",
+                    "text": {"body": "Sorry, I didn’t understand that. Type 'reset' to start over."}
+                })
                 return
 
             # 3) “Add Another Area?” confirmation (step == "bedbug_waiting_area_add_confirmation")
@@ -450,17 +457,19 @@ def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
                     return
 
                 if payload_lower == "bedbug_add_area_no":
-                    # Remove the awaiting flag, then proceed to counts
+                    # Remove the awaiting flag (not strictly needed here), then proceed to counts
                     if "awaiting_area_add_confirmation" in state:
                         del state["awaiting_area_add_confirmation"]
                     set_user_state(BEDBUG_PREFIX, from_number, state)
                     _maybe_ask_bedroom_count(from_number, os.getenv("PHONE_NUMBER_ID"))
                     return
 
-                send_text_message(
-                    to=from_number,
-                    body="Please select 'Yes' or 'No'."
-                )
+                send_text_message({
+                    "to": from_number,
+                    "type": "text",
+                    "messaging_product": "whatsapp",
+                    "text": {"body": "Please select 'Yes' or 'No'."}
+                })
                 return
 
             # 4) Bedroom‐count selection (step == "bedbug_waiting_bedroom_count")
@@ -494,10 +503,12 @@ def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
                     # Ask for free‐form count text
                     state["step"] = "bedbug_waiting_count_text"
                     set_user_state(BEDBUG_PREFIX, from_number, state)
-                    send_text_message(
-                        to=from_number,
-                        body="Please specify the approximate number of bedbugs:"
-                    )
+                    send_text_message({
+                        "to": from_number,
+                        "type": "text",
+                        "messaging_product": "whatsapp",
+                        "text": {"body": "Please specify the approximate number of bedbugs:"}
+                    })
                     return
 
                 else:
@@ -519,7 +530,12 @@ def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
                         "Hold on tight—we’re summoning a real, living, breathing, functioning human support agent for you! "
                         "They’ll join this chat as soon as they're available. In the meantime, feel free to explore our other services and read our FAQ!"
                     )
-                    send_text_message(to=from_number, body=hold_on_text)
+                    send_text_message({
+                        "to": from_number,
+                        "type": "text",
+                        "messaging_product": "whatsapp",
+                        "text": {"body": hold_on_text}
+                    })
 
                     # Small delay so the FAQ isn’t dropped
                     time.sleep(1)
@@ -534,10 +550,12 @@ def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
                     return
 
                 if payload_lower == "bedbug_confirm_no":
-                    send_text_message(
-                        to=from_number,
-                        body="Let's update your bedbug details. Restarting the bedbug flow."
-                    )
+                    send_text_message({
+                        "to": from_number,
+                        "type": "text",
+                        "messaging_product": "whatsapp",
+                        "text": {"body": "Let's update your bedbug details. Restarting the bedbug flow."}
+                    })
                     clear_user_state(BEDBUG_PREFIX, from_number)
                     send_bedbug_option_prompt(
                         to=from_number,
@@ -545,16 +563,18 @@ def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
                     )
                     return
 
-                send_text_message(
-                    to=from_number,
-                    body="Please select 'Yes' or 'No'."
-                )
+                send_text_message({
+                    "to": from_number,
+                    "type": "text",
+                    "messaging_product": "whatsapp",
+                    "text": {"body": "Please select 'Yes' or 'No'."}
+                })
                 return
 
     # ─── C) Handle interactive LIST replies (“interactive.list_reply”) ─────────────
-    if msg_type == "interactive" and message["interactive"].get("type") == "list_reply":
-        choice_id    = message["interactive"]["list_reply"]["id"]
-        choice_title = message["interactive"]["list_reply"].get("title", "")
+    if msg_type == "interactive" and message.get("interactive", {}).get("type") == "list_reply":
+        choice_id    = message.get("interactive", {}).get("list_reply", {}).get("id", "")
+        choice_title = message.get("interactive", {}).get("list_reply", {}).get("title", "")
         print(f"[DEBUG] handle_bedbug_flow: LIST payload='{choice_id}' from {from_number}")
 
         state = user_state or {}
@@ -568,10 +588,12 @@ def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
                 # Ask user to specify a custom area by text
                 state["step"] = "bedbug_waiting_other_area"
                 set_user_state(BEDBUG_PREFIX, from_number, state)
-                send_text_message(
-                    to=from_number,
-                    body="Please specify the affected area:"
-                )
+                send_text_message({
+                    "to": from_number,
+                    "type": "text",
+                    "messaging_product": "whatsapp",
+                    "text": {"body": "Please specify the affected area:"}
+                })
                 return
 
             # If user chose Bedroom(s)
@@ -606,7 +628,7 @@ def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
 
     # ─── D) Handle plain‐text input for “Others” or custom count ─────────────────
     if msg_type == "text":
-        text_body = message["text"]["body"].strip()
+        text_body = message.get("text", {}).get("body", "").strip()
         state     = user_state or {}
         step      = state.get("step", "")
 
@@ -634,7 +656,9 @@ def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
             return
 
     # ─── E) FALLBACK: If nothing matched above ──────────────────────────────────
-    send_text_message(
-        to=from_number,
-        body="Sorry, I can’t handle that type of message. Type 'reset' to start over."
-    )
+    send_text_message({
+        "to": from_number,
+        "type": "text",
+        "messaging_product": "whatsapp",
+        "text": {"body": "Sorry, I can’t handle that type of message. Type 'reset' to start over."}
+    })

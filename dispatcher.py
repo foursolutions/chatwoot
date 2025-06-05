@@ -1,9 +1,11 @@
 import os
 import json
 from flask import Flask, request, Response
+
 from helpers import (
     send_text_message,
     send_interactive_message,
+    send_template_message,      # ← Add this import
     get_user_state,
     set_user_state,
     clear_user_state
@@ -69,31 +71,12 @@ def receive_message():
         clear_user_state("bedbug", from_number)
         clear_user_state("mold", from_number)
 
-        # ✅ Send approved main_menu_v2 template
-        template_payload = {
-            "to": from_number,
-            "type": "template",
-            "messaging_product": "whatsapp",
-            "template": {
-                "name": "main_menu_v2",
-                "language": {
-                    "code": "en",
-                    "policy": "deterministic"
-                },
-                "components": [
-                    {
-                        "type": "body",
-                        "parameters": [
-                            {
-                                "type": "text",
-                                "text": "there"
-                            }
-                        ]
-                    }
-                ]
-            }
-        }
-        send_interactive_message(template_payload)
+        # ✅ Send approved main_menu_v2 template via send_template_message()
+        send_template_message(
+            to=from_number,
+            template_name="main_menu_v2",
+            template_params=["there"]
+        )
         return Response(status=200)
 
     # ─────── 2) “button” presses ───────
@@ -115,7 +98,7 @@ def receive_message():
             })
             return Response(status=200)
 
-    # ─────── 3–5) Resume if in flow ───────
+    # ─────── 3–5) Resume if in an active flow ───────
     if get_user_state("car", from_number) is not None:
         return handle_car_fumigation_flow(from_number, message_raw, API_KEY, BASE_URL)
     if get_user_state("bedbug", from_number) is not None:
@@ -126,30 +109,13 @@ def receive_message():
     # ─────── 6) Fallback: show main menu again ───────
     if msg_type in ("text", "chat") or body_text:
         print("[DEBUG] Falling back to show main menu for:", body_text, "msg_type=", msg_type)
-        template_payload = {
-            "to": from_number,
-            "type": "template",
-            "messaging_product": "whatsapp",
-            "template": {
-                "name": "main_menu_v2",
-                "language": {
-                    "code": "en",
-                    "policy": "deterministic"
-                },
-                "components": [
-                    {
-                        "type": "body",
-                        "parameters": [
-                            {
-                                "type": "text",
-                                "text": "there"
-                            }
-                        ]
-                    }
-                ]
-            }
-        }
-        send_interactive_message(template_payload)
+
+        # ✅ Send approved main_menu_v2 template via send_template_message()
+        send_template_message(
+            to=from_number,
+            template_name="main_menu_v2",
+            template_params=["there"]
+        )
         return Response(status=200)
 
     return Response(status=200)

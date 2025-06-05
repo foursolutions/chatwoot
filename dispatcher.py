@@ -69,48 +69,31 @@ def receive_message():
         clear_user_state("bedbug", from_number)
         clear_user_state("mold", from_number)
 
-        interactive_payload = {
+        # ✅ Send approved main_menu_v2 template
+        template_payload = {
             "to": from_number,
-            "type": "interactive",
+            "type": "template",
             "messaging_product": "whatsapp",
-            "interactive": {
-                "type": "button",
-                "body": {
-                    "text": (
-                        "Hi there, thanks for reaching out to Four Solutions! "
-                        "I'm Solvia, your fun and friendly chatbot.\n"
-                        "How may I help you today? (Tap \"Live Human\" anytime, "
-                        "or choose one of the options below.)"
-                    )
+            "template": {
+                "name": "main_menu_v2",
+                "language": {
+                    "code": "en",
+                    "policy": "deterministic"
                 },
-                "action": {
-                    "buttons": [
-                        {
-                            "type": "reply",
-                            "reply": {
-                                "id": "help_pest",
-                                "title": "Need help on Pest!"
+                "components": [
+                    {
+                        "type": "body",
+                        "parameters": [
+                            {
+                                "type": "text",
+                                "text": "there"
                             }
-                        },
-                        {
-                            "type": "reply",
-                            "reply": {
-                                "id": "help_mold",
-                                "title": "Need help on Mold!"
-                            }
-                        },
-                        {
-                            "type": "reply",
-                            "reply": {
-                                "id": "live_human",
-                                "title": "Live Human"
-                            }
-                        }
-                    ]
-                }
+                        ]
+                    }
+                ]
             }
         }
-        send_interactive_message(interactive_payload)
+        send_interactive_message(template_payload)
         return Response(status=200)
 
     # ─────── 2) “button” presses ───────
@@ -140,51 +123,33 @@ def receive_message():
     if get_user_state("mold", from_number) is not None:
         return handle_mold_flow(from_number, message_raw, API_KEY, BASE_URL)
 
-    # ─────── 6) Fallback: show main menu ───────
+    # ─────── 6) Fallback: show main menu again ───────
     if msg_type in ("text", "chat") or body_text:
         print("[DEBUG] Falling back to show main menu for:", body_text, "msg_type=", msg_type)
-        interactive_payload = {
+        template_payload = {
             "to": from_number,
-            "type": "interactive",
+            "type": "template",
             "messaging_product": "whatsapp",
-            "interactive": {
-                "type": "button",
-                "body": {
-                    "text": (
-                        "Hi there, thanks for reaching out to Four Solutions! "
-                        "I'm Solvia, your fun and friendly chatbot.\n"
-                        "How may I help you today? (Tap \"Live Human\" anytime, "
-                        "or choose one of the options below.)"
-                    )
+            "template": {
+                "name": "main_menu_v2",
+                "language": {
+                    "code": "en",
+                    "policy": "deterministic"
                 },
-                "action": {
-                    "buttons": [
-                        {
-                            "type": "reply",
-                            "reply": {
-                                "id": "help_pest",
-                                "title": "Need help on Pest!"
+                "components": [
+                    {
+                        "type": "body",
+                        "parameters": [
+                            {
+                                "type": "text",
+                                "text": "there"
                             }
-                        },
-                        {
-                            "type": "reply",
-                            "reply": {
-                                "id": "help_mold",
-                                "title": "Need help on Mold!"
-                            }
-                        },
-                        {
-                            "type": "reply",
-                            "reply": {
-                                "id": "live_human",
-                                "title": "Live Human"
-                            }
-                        }
-                    ]
-                }
+                        ]
+                    }
+                ]
             }
         }
-        send_interactive_message(interactive_payload)
+        send_interactive_message(template_payload)
         return Response(status=200)
 
     return Response(status=200)

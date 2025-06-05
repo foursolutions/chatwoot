@@ -1,6 +1,8 @@
 # flows/car_fumigation.py
 
 import os
+import json
+import requests
 from datetime import datetime, timedelta
 from flask import Response
 
@@ -37,67 +39,129 @@ def send_main_menu(to: str, phone_number_id: str):
     print(f"[DEBUG] send_main_menu → 1msg response: {resp}")
 
 # ================================================================================ 
-# 2) Pest Control Services → Interactive “List” of common pest issues
+# 2) Pest Control Services → Send a “list” via 1msg’s /sendList endpoint
 # ================================================================================ 
 def send_pest_control_list(to: str, phone_number_id: str):
+    """
+    Instead of wrapping an “interactive” object, we post directly to /sendList
+    with the exact JSON schema 1msg expects:
+
+    {
+      "token": "...",
+      "body": "Please select the pest control service you need assistance with:\n",
+      "header": "Pest Control Services",
+      "footer": "Tap to choose",
+      "action": "Select Service",
+      "sections": [
+        {
+          "title": "Common Pest Issues",
+          "rows": [
+            {
+              "id": "car_fumigation",
+              "title": "Car Fumigation 🚗",
+              "description": "On-site fumigation & fogging"
+            },
+            {
+              "id": "bedbugs",
+              "title": "Bed Bugs 🛏️",
+              "description": "Elimination of bed bugs"
+            },
+            {
+              "id": "booklice",
+              "title": "Booklice 📚",
+              "description": "Treatment for booklice"
+            },
+            {
+              "id": "roaches_ants",
+              "title": "Roaches & Ants 🐜",
+              "description": "General pest control"
+            },
+            {
+              "id": "bees_wasps",
+              "title": "Bees/Wasps 🐝",
+              "description": "Removal of nests"
+            },
+            {
+              "id": "commercial_pest",
+              "title": "Commercial Pest 🏢",
+              "description": "Services for offices"
+            },
+            {
+              "id": "other_pest_issues",
+              "title": "Other Pest Issues 🕷️",
+              "description": "Other pest problems"
+            }
+          ]
+        }
+      ],
+      "phone": "+6587788080"
+    }
+    """
+
+    # Pull token and base_url from environment (same as in helpers.py)
+    api_key  = os.environ.get("1MSG_API_KEY")
+    base_url = os.environ.get("1MSG_BASE_URL")  # e.g. https://api.1msg.io/VAN123456
+
+    url = f"{base_url}/sendList"
+    headers = { "Content-Type": "application/json" }
+
     payload = {
-        "to": to,
-        "type": "interactive",
-        "messaging_product": "whatsapp",
-        "interactive": {
-            "type": "list",
-            "header": { "type": "text", "text": "Pest Control Services" },
-            "body":   { "text": "Please select the pest control service you need assistance with:" },
-            "footer": { "text": "Tap below to choose" },
-            "action": {
-                "button": "Select Service",
-                "sections": [
+        "token": api_key,
+        "body": "Please select the pest control service you need assistance with:\n",
+        "header": "Pest Control Services",
+        "footer": "Tap to choose",
+        "action": "Select Service",
+        "sections": [
+            {
+                "title": "Common Pest Issues",
+                "rows": [
                     {
-                        "title": "Common Pest Issues",
-                        "rows": [
-                            {
-                                "id": "car_fumigation",
-                                "title": "Car Fumigation 🚗",
-                                "description": "On-site fumigation & fogging"
-                            },
-                            {
-                                "id": "bedbugs",
-                                "title": "Bed Bugs 🛏️",
-                                "description": "Elimination of bed bugs"
-                            },
-                            {
-                                "id": "booklice",
-                                "title": "Booklice 📚",
-                                "description": "Treatment for booklice"
-                            },
-                            {
-                                "id": "roaches_ants",
-                                "title": "Roaches & Ants 🐜",
-                                "description": "General pest control"
-                            },
-                            {
-                                "id": "bees_wasps",
-                                "title": "Bees/Wasps 🐝",
-                                "description": "Removal of nests"
-                            },
-                            {
-                                "id": "commercial_pest",
-                                "title": "Commercial Pest 🏢",
-                                "description": "Services for offices"
-                            },
-                            {
-                                "id": "other_pest_issues",
-                                "title": "Other Pest Issues 🕷️",
-                                "description": "Other pest problems"
-                            }
-                        ]
+                        "id": "car_fumigation",
+                        "title": "Car Fumigation 🚗",
+                        "description": "On-site fumigation & fogging"
+                    },
+                    {
+                        "id": "bedbugs",
+                        "title": "Bed Bugs 🛏️",
+                        "description": "Elimination of bed bugs"
+                    },
+                    {
+                        "id": "booklice",
+                        "title": "Booklice 📚",
+                        "description": "Treatment for booklice"
+                    },
+                    {
+                        "id": "roaches_ants",
+                        "title": "Roaches & Ants 🐜",
+                        "description": "General pest control"
+                    },
+                    {
+                        "id": "bees_wasps",
+                        "title": "Bees/Wasps 🐝",
+                        "description": "Removal of nests"
+                    },
+                    {
+                        "id": "commercial_pest",
+                        "title": "Commercial Pest 🏢",
+                        "description": "Services for offices"
+                    },
+                    {
+                        "id": "other_pest_issues",
+                        "title": "Other Pest Issues 🕷️",
+                        "description": "Other pest problems"
                     }
                 ]
             }
-        }
+        ],
+        "phone": f"+{to}"
     }
-    resp = send_interactive_message(payload)
-    print(f"[DEBUG] send_pest_control_list → 1msg response: {resp}")
+
+    response = requests.post(url, headers=headers, json=payload)
+    print(f"[DEBUG] send_pest_control_list → {response.status_code}, {response.text}")
+    try:
+        return response.json()
+    except ValueError:
+        return {"error": "Invalid JSON response from /sendList"}
 
 # ================================================================================ 
 # 3) Car Fumigation Menu → Template “car_fum_menu”
@@ -124,7 +188,7 @@ def send_car_fum_quote_options(to: str, phone_number_id: str):
     print(f"[DEBUG] send_car_fum_quote_options → 1msg response: {resp}")
 
 # ================================================================================ 
-# 5) “Select Pest Type” → Interactive List of pest categories (Cockroach, Ants, etc.)
+# 5) “Select Pest Type” → (UNCHANGED for now) Interactive List
 # ================================================================================ 
 def send_pest_type_list(to: str, phone_number_id: str):
     payload = {
@@ -156,7 +220,7 @@ def send_pest_type_list(to: str, phone_number_id: str):
     print(f"[DEBUG] send_pest_type_list → 1msg response: {resp}")
 
 # ================================================================================ 
-# 6) “Select Vehicle Type” → Interactive List of vehicle categories (Sedan, SUV, etc.)
+# 6) “Select Vehicle Type” → (UNCHANGED for now) Interactive List
 # ================================================================================ 
 def send_vehicle_type_list(to: str, phone_number_id: str):
     payload = {
@@ -174,36 +238,12 @@ def send_vehicle_type_list(to: str, phone_number_id: str):
                     {
                         "title": "Vehicle Types",
                         "rows": [
-                            {
-                                "id": "vehicle_sedan",
-                                "title": "Sedan/Hatchback",
-                                "description": "Standard cars"
-                            },
-                            {
-                                "id": "vehicle_suv",
-                                "title": "SUV",
-                                "description": "Sport Utility Vehicle"
-                            },
-                            {
-                                "id": "vehicle_mpv",
-                                "title": "MPV",
-                                "description": "Multi-Purpose Vehicle"
-                            },
-                            {
-                                "id": "vehicle_vans",
-                                "title": "Vans/Lorries",
-                                "description": "Commercial vehicles"
-                            },
-                            {
-                                "id": "vehicle_ultra_luxury",
-                                "title": "Super/Luxury Cars",
-                                "description": "e.g. Bentley, Ferrari, etc."
-                            },
-                            {
-                                "id": "vehicle_others",
-                                "title": "Others",
-                                "description": "Other vehicle types"
-                            }
+                            { "id": "vehicle_sedan",          "title": "Sedan/Hatchback",     "description": "Standard cars" },
+                            { "id": "vehicle_suv",            "title": "SUV",                 "description": "Sport Utility Vehicle" },
+                            { "id": "vehicle_mpv",            "title": "MPV",                 "description": "Multi-Purpose Vehicle" },
+                            { "id": "vehicle_vans",           "title": "Vans/Lorries",        "description": "Commercial vehicles" },
+                            { "id": "vehicle_ultra_luxury",   "title": "Super/Luxury Cars",   "description": "e.g. Bentley, Ferrari, etc." },
+                            { "id": "vehicle_others",         "title": "Others",              "description": "Other vehicle types" }
                         ]
                     }
                 ]
@@ -214,7 +254,7 @@ def send_vehicle_type_list(to: str, phone_number_id: str):
     print(f"[DEBUG] send_vehicle_type_list → 1msg response: {resp}")
 
 # ================================================================================ 
-# 7) “Additional Care Fee” → Interactive Buttons (“Yes” / “No”) for Luxury Brand
+# 7) “Additional Care Fee” → (UNCHANGED) Interactive Buttons (“Yes” / “No”)
 # ================================================================================ 
 def send_cfadditionalfee_prompt(to: str, phone_number_id: str):
     text = (
@@ -249,7 +289,7 @@ def send_cfadditionalfee_prompt(to: str, phone_number_id: str):
     print(f"[DEBUG] send_cfadditionalfee_prompt → 1msg response: {resp}")
 
 # ================================================================================ 
-# 8) “Date Selection” → Interactive List of the next 7 dates (plus “Other dates”)
+# 8) “Date Selection” → (UNCHANGED) Interactive List for next 7 dates + “Other dates”
 # ================================================================================ 
 def send_upcoming_dates_list(to: str, phone_number_id: str):
     today    = datetime.now()
@@ -261,8 +301,8 @@ def send_upcoming_dates_list(to: str, phone_number_id: str):
         weekday   = date_obj.strftime("%A")
         title     = f"{date_str}, {weekday}"
         rows.append({
-            "id":        f"date_{date_str}",
-            "title":     title,
+            "id":          f"date_{date_str}",
+            "title":       title,
             "description": ""
         })
 
@@ -297,7 +337,7 @@ def send_upcoming_dates_list(to: str, phone_number_id: str):
     print(f"[DEBUG] send_upcoming_dates_list → 1msg response: {resp}")
 
 # ================================================================================ 
-# 9) “Which Time?” → Interactive Buttons (Morning / Afternoon / Evening)
+# 9) “Which Time?” → (UNCHANGED) Interactive Buttons (Morning / Afternoon / Evening)
 # ================================================================================ 
 def send_time_selection_prompt(to: str, phone_number_id: str, chosen_date: str):
     state = get_user_state("car", to) or {}
@@ -339,7 +379,7 @@ def send_time_selection_prompt(to: str, phone_number_id: str, chosen_date: str):
     print(f"[DEBUG] send_time_selection_prompt → 1msg response: {resp}")
 
 # ================================================================================ 
-# 10) “Quote Summary” → Interactive Buttons (Book Now / FAQ / Return to Main Menu)
+# 10) “Quote Summary” → (UNCHANGED) Interactive Buttons (Book Now / FAQ / Return to Main Menu)
 # ================================================================================ 
 def send_quote_summary(to: str, phone_number_id: str):
     state = get_user_state("car", to) or {}
@@ -426,7 +466,7 @@ def send_quote_summary(to: str, phone_number_id: str):
     print(f"[DEBUG] send_quote_summary → 1msg response: {resp}")
 
 # ================================================================================ 
-# 11) Car Fumigation FAQ → Interactive List of FAQs
+# 11) Car Fumigation FAQ → (UNCHANGED) Interactive List of FAQs
 # ================================================================================ 
 def send_car_fumigation_faq(to: str, phone_number_id: str):
     payload = {
@@ -444,36 +484,12 @@ def send_car_fumigation_faq(to: str, phone_number_id: str):
                     {
                         "title": "FAQ Questions",
                         "rows": [
-                            {
-                                "id": "cfq_safe",
-                                "title": "Is it safe? Kids/Pets",
-                                "description": "Safety with HACCP chemicals"
-                            },
-                            {
-                                "id": "cfq_included",
-                                "title": "Service Details",
-                                "description": "What’s included in our service?"
-                            },
-                            {
-                                "id": "cfq_warranty",
-                                "title": "Our Warranty",
-                                "description": "Warranty information"
-                            },
-                            {
-                                "id": "cfq_preparation",
-                                "title": "Preparation",
-                                "description": "What to prepare before service"
-                            },
-                            {
-                                "id": "cfq_duration",
-                                "title": "Service Duration",
-                                "description": "How long the service takes"
-                            },
-                            {
-                                "id": "cfq_payment",
-                                "title": "Payment Options",
-                                "description": "Payment methods accepted"
-                            }
+                            { "id": "cfq_safe",        "title": "Is it safe? Kids/Pets",   "description": "Safety with HACCP chemicals"  },
+                            { "id": "cfq_included",    "title": "Service Details",         "description": "What’s included in our service?" },
+                            { "id": "cfq_warranty",    "title": "Our Warranty",            "description": "Warranty information"         },
+                            { "id": "cfq_preparation", "title": "Preparation",             "description": "What to prepare before service" },
+                            { "id": "cfq_duration",    "title": "Service Duration",        "description": "How long the service takes"   },
+                            { "id": "cfq_payment",     "title": "Payment Options",         "description": "Payment methods accepted"      }
                         ]
                     }
                 ]
@@ -484,7 +500,7 @@ def send_car_fumigation_faq(to: str, phone_number_id: str):
     print(f"[DEBUG] send_car_fumigation_faq → 1msg response: {resp}")
 
 # ================================================================================ 
-# 12) Process FAQ Response → Sends back the selected FAQ answer
+# 12) Process FAQ Response → Sends back the selected FAQ answer (UNCHANGED)
 # ================================================================================ 
 def process_car_fumigation_faq_response(to: str, faq_id: str):
     faq_answers = {

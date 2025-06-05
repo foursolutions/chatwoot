@@ -551,11 +551,10 @@ def process_car_fumigation_faq_response(to: str, faq_id: str):
 
 # ================================================================================ 
 # 13) The “handle_car_fumigation_flow” function routes through each step of the flow
-#     based on state["step"].  
-#
+#     based on state["step"].
 #     If state is a simple string (instead of a dict), you will encounter
-#     "'str' object has no attribute 'get'".  Make sure you always store a dict
-#     in set_user_state("car", from_number, { ... }).
+#     "'str' object has no attribute 'get'."
+#     Make sure you always store a dict in set_user_state("car", from_number, { ... }).
 # ================================================================================ 
 def handle_car_fumigation_flow(to: str, message: dict, api_key: str, base_url: str):
     """
@@ -584,11 +583,11 @@ def handle_car_fumigation_flow(to: str, message: dict, api_key: str, base_url: s
         send_pest_control_list(to, message["from"])
         return Response(status=200)
 
-    # ── Step 3: User selected “car_fumigation” from the list ──
+    # ── Step 3: User selected “car_fumigation” from the pest list ──
     if (
-        msg_type == "interactive" and
-        message["interactive"]["list_reply"]["id"] == "car_fumigation" and
-        state.get("step") == "pest_control_list"
+        msg_type == "interactive"
+        and message["interactive"].get("list_reply", {}).get("id") == "car_fumigation"
+        and state.get("step") == "pest_control_list"
     ):
         state["step"] = "car_fum_menu"
         set_user_state("car", to, state)
@@ -638,7 +637,7 @@ def handle_car_fumigation_flow(to: str, message: dict, api_key: str, base_url: s
         vehicle_choice = message["interactive"]["list_reply"]["id"]
         state["vehicle"] = vehicle_choice
 
-        # If user chose “Super/Luxury Cars” or “Others”, we require a manual quote
+        # If user chose “Super/Luxury Cars” or “Others”, require a manual quote
         if vehicle_choice in ["vehicle_ultra_luxury", "vehicle_others"]:
             state["manual_quote"] = True
             state["step"] = "quote_summary"
@@ -777,7 +776,7 @@ def handle_car_fumigation_flow(to: str, message: dict, api_key: str, base_url: s
         appointment_date = state.get("appointment_date", "")
         appointment_time = state.get("appointment_time", "")
 
-        # Clear Redis/in‐memory state now that we have everything
+        # Clear in‐memory state now that we have everything
         clear_user_state("car", to)
 
         # Send a “Thank you / confirmation” text summarizing everything

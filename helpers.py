@@ -1,122 +1,122 @@
 # helpers.py
-
 import os
 import json
 import requests
 
-# -----------------------------------------------------------------------------
-# This file contains three kinds of helper functions:
-#   • send_text_message(...)
-#   • send_template_message(...)
-#   • clear/set/get user state (via Redis)
-# -----------------------------------------------------------------------------
-
-#
-# 1) TEXT‐ONLY MESSAGE
-#
-def send_text_message(to: str, text: str):
+# -------------------------------------------------------------------
+# Helper to send a plain text message via 1msg
+# -------------------------------------------------------------------
+def send_text_message(payload):
     """
-    Send a plain "text" message over 1MSG.  For WhatsApp, text must be a simple string.
-    """
-    API_KEY    = os.environ["1MSG_API_KEY"]
-    BASE_URL   = os.environ["1MSG_BASE_URL"].rstrip("/")  # e.g. "https://api.1msg.io/VAN12345678"
-    PHONE_ID   = os.environ.get("PHONE_NUMBER_ID", None)   # (for WhatsApp business channel push)
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {API_KEY}"
-    }
-    payload = {
-        "token": API_KEY,
-        "to": to,
+    payload should be a dict like:
+      {
+        "to": "6588123456",
         "type": "text",
-        "messaging_product": "whatsapp",
-        "text": {
-            "body": text
-        }
-    }
-    # If you also need phone_number_id in the 1MSG payload, you can add it here:
-    if PHONE_ID:
-        payload["phone_number_id"] = PHONE_ID
-
-    url = f"{BASE_URL}/messages"
-    resp = requests.post(url, headers=headers, json=payload)
-    # Debug log
-    print(f"[DEBUG] send_text_message → {resp.status_code}, {resp.text}")
-    return resp.json()
-
-
-#
-# 2) TEMPLATE MESSAGE (buttons, interactive, etc.)
-#
-def send_template_message(to: str, token: str, template_name: str, language: dict, params: list):
+        "text": {"body": "Hello!"},
+        "messaging_product": "whatsapp"
+      }
     """
-    Send a template message via 1MSG.  We no longer pass `namespace` here as a separate keyword
-    (the 1MSG API already knows your namespace by virtue of the VAN ID in BASE_URL).
-    - `to`           : recipient phone (E.164 without '+', e.g. "6588601234")
-    - `token`        : same as 1MSG_API_KEY
-    - `template_name`: name of your template, e.g. "main_menu_v2"
-    - `language`     : {"policy": "deterministic", "code": "en"}
-    - `params`       : list of body/header/button parameters (JSON‐serializable)
+    api_key  = os.environ.get("1MSG_API_KEY")
+    base_url = os.environ.get("1MSG_BASE_URL")  # e.g. https://api.1msg.io/VAN123456
+    url      = f"{base_url}/messages"
+    headers  = { "Content-Type": "application/json" }
+    params   = { "token": api_key }
+    response = requests.post(url, params=params, headers=headers, json=payload)
+    print(f"[DEBUG] send_text_message → {response.status_code}, {response.text}")
+    try:
+        return response.json()
+    except ValueError:
+        return {"error": "Invalid JSON response from 1msg"}
+
+
+# -------------------------------------------------------------------
+# Helper to send an interactive (button/list) message via 1msg
+# -------------------------------------------------------------------
+def send_interactive_message(payload):
     """
-    BASE_URL = os.environ["1MSG_BASE_URL"].rstrip("/")  # e.g. "https://api.1msg.io/VAN388218473"
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {token}"
-    }
+    payload should be a dict like:
+      {
+        "to": "6588123456",
+        "type": "interactive",
+        "interactive": { ... },
+        "messaging_product": "whatsapp"
+      }
+    """
+    api_key  = os.environ.get("1MSG_API_KEY")
+    base_url = os.environ.get("1MSG_BASE_URL")
+    url      = f"{base_url}/messages"
+    headers  = { "Content-Type": "application/json" }
+    params   = { "token": api_key }
+    response = requests.post(url, params=params, headers=headers, json=payload)
+    print(f"[DEBUG] send_interactive_message → {response.status_code}, {response.text}")
+    try:
+        return response.json()
+    except ValueError:
+        return {"error": "Invalid JSON response from 1msg"}
+
+
+# -------------------------------------------------------------------
+# Helper to send a WhatsApp‐template (preapproved) message via 1msg
+# -------------------------------------------------------------------
+def send_template_message(to: str, template_name: str, template_params: list):
+    """
+    to            : recipient’s phone number in full international format (no “+” or spaces), e.g. "6588123456"
+    template_name : the exact name of your WhatsApp template (e.g. "main_menu_v2")
+    template_params: a list of strings for each placeholder in your template’s body
+    """
+    api_key   = os.environ.get("1MSG_API_KEY")
+    namespace = os.environ.get("1MSG_NAMESPACE")    # must be set in Heroku’s config vars
+    url       = f"{os.environ.get('1MSG_BASE_URL')}/sendTemplate"
+
     payload = {
-        "token": token,
-        "template": template_name,
-        "language": language,
-        "params": params,
+        "token":    api_key,
+        "namespace": namespace,
+        "template":  template_name,
+        "language":  {"policy": "deterministic", "code": "en"},
+        "params": [
+            {
+                "type":       "body",
+                "parameters": [{"type": "text", "text": param} for param in template_params]
+            }
+        ],
         "phone": to
     }
 
-    url = f"{BASE_URL}/sendTemplate"
-    resp = requests.post(url, headers=headers, json=payload)
-    print(f"[DEBUG] send_template_message → {resp.status_code}, {resp.text}")
-    return resp.json()
-
-
-#
-# 3) SIMPLE KEY‐VALUE STATE STORAGE (using Redis)
-#
-#    We store per‐user “state” under keys like "car:{from_number}".
-#    You can tweak these helpers if you use a different Redis library.
-#
-import redis
-
-# Parse Redis connection string from environment.  This might be something like
-#   REDIS_URL="redis://:<password>@<hostname>:<port>"
-# You already have REDIS_URL set in Heroku config.
-redis_conn = redis.from_url(os.environ.get("REDIS_URL", ""), decode_responses=True)
-
-
-def get_user_state(flow: str, user_id: str) -> dict:
-    """
-    Read a JSON blob from Redis under key "<flow>:<user_id>".
-    If nothing is set, returns {}.
-    """
-    key = f"{flow}:{user_id}"
-    data = redis_conn.get(key)
-    if not data:
-        return {}
+    print("[DEBUG] 1msg SEND TEMPLATE payload:", json.dumps(payload, indent=2))
+    response = requests.post(url, headers={"Content-Type": "application/json"}, json=payload)
+    print(f"[DEBUG] send_template_message → {response.status_code}, {response.text}")
     try:
-        return json.loads(data)
-    except json.JSONDecodeError:
-        return {}
+        return response.json()
+    except ValueError:
+        return {"error": "Invalid JSON response from 1msg"}
 
 
-def set_user_state(flow: str, user_id: str, new_state: dict):
-    """
-    Overwrite the JSON blob in Redis under key "<flow>:<user_id>".
-    """
-    key = f"{flow}:{user_id}"
-    redis_conn.set(key, json.dumps(new_state))
+# -------------------------------------------------------------------
+# In‐memory user‐state store (can be swapped out for Redis if desired)
+# -------------------------------------------------------------------
+_user_states = {
+    "car":    {},
+    "bedbug": {},
+    "mold":   {}
+}
 
+def get_user_state(flow_name: str, phone_number: str):
+    """
+    Return the stored state object (a dict) for this (flow_name, phone_number).
+    If none exists, returns None.
+    """
+    return _user_states.get(flow_name, {}).get(phone_number)
 
-def clear_user_state(flow: str, user_id: str):
+def set_user_state(flow_name: str, phone_number: str, state_obj: dict):
     """
-    Delete the Redis key "<flow>:<user_id>".
+    Store the given state_obj (dict) under (flow_name, phone_number).
+    ALWAYS store a dict here; never a string.
     """
-    key = f"{flow}:{user_id}"
-    redis_conn.delete(key)
+    _user_states.setdefault(flow_name, {})[phone_number] = state_obj
+
+def clear_user_state(flow_name: str, phone_number: str):
+    """
+    Remove any stored state for (flow_name, phone_number).
+    """
+    if phone_number in _user_states.get(flow_name, {}):
+        del _user_states[flow_name][phone_number]

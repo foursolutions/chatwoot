@@ -23,8 +23,10 @@ NAMESPACE          = os.environ.get("1MSG_NAMESPACE", "")      # e.g. 94d66366_9
 LANG_CODE          = os.environ.get("1MSG_LANG_CODE", "en")    # e.g. "en"
 MAIN_MENU_TEMPLATE = os.environ.get("MAIN_MENU_TEMPLATE", "main_menu_v2")
 
+
 @app.route("/webhook", methods=["GET"])
 def verify():
+    # Facebook/WhatsApp/1msg verification handshake
     mode      = request.args.get("hub.mode")
     token     = request.args.get("hub.verify_token")
     challenge = request.args.get("hub.challenge")
@@ -32,20 +34,20 @@ def verify():
         return challenge, 200
     return "Verification token mismatch", 403
 
+
 @app.route("/webhook", methods=["POST"])
 def receive_message():
     payload = request.get_json(force=True)
     print(">>>> RAW INCOMING JSON:", json.dumps(payload, indent=2))
 
     # ───────────────────────────────────────────────────────────
-    # 1) First, try the “Facebook‐style” nested format:
+    # 1) Try the “Facebook‐style” nested format:
     #    payload["entry"][0]["changes"][0]["value"]["messages"]
     # ───────────────────────────────────────────────────────────
     messages = []
     from_whatsapp = False
 
     if "entry" in payload and isinstance(payload["entry"], list):
-        # Facebook‐style or 360dialog format
         entry   = payload.get("entry", [{}])[0]
         changes = entry.get("changes", [{}])[0]
         value   = changes.get("value", {})
@@ -54,102 +56,103 @@ def receive_message():
 
     # ───────────────────────────────────────────────────────────
     # 2) If not found, check if this is 1msg’s “direct” format:
-    #    payload["messages"] is a top‐level array of message‐objects
+    #    payload["messages"] is a top‐level array
     # ───────────────────────────────────────────────────────────
     elif "messages" in payload and isinstance(payload["messages"], list):
-        # 1msg direct webhook format
         messages = payload["messages"]
         from_whatsapp = True
 
-    # If we still have no messages, just return 200
+    # If still no messages, just return 200
     if not messages:
         return Response(status=200)
 
     # ───────────────────────────────────────────────────────────
-    # 3) Extract the first message
+    # 3) Extract the first message object
     # ───────────────────────────────────────────────────────────
     message = messages[0]
 
-    # Depending on source, “from” phone number may be under message["from"] or message["author"]
+    # Depending on source, “from” phone might be in message["from"] or message["author"]
     raw_from = ""
     if "from" in message:
         raw_from = message.get("from", "")
     elif "author" in message:
         raw_from = message.get("author", "")
-    # Strip “@c.us” if present
     from_number = raw_from.split("@")[0] if "@" in raw_from else raw_from
 
-    # Determine message type & text body:
+    # Determine msg_type and text_body:
     msg_type = message.get("type", "")
     text_body = ""
 
-    #  ─── If it’s “Facebook‐style text”: message["text"]["body"]
+    # If it’s “Facebook‐style text”: message["text"]["body"]
     if msg_type == "text" and "text" in message:
         text_body = message["text"]["body"].strip().lower()
 
-    #  ─── If it’s 1msg’s format for a plain chat: message["type"] == "chat"
+    # If it’s 1msg’s “chat” format: message["type"] == "chat", message["body"]
     elif msg_type == "chat" and "body" in message:
         text_body = message["body"].strip().lower()
-        msg_type = "text"   # normalize it so that we treat it as a text message
+        msg_type = "text"  # normalize to "text"
 
     # ───────────────────────────────────────────────────────────
-    # 4) Now handle “reset”
+    # 4) Handle “reset” command
     # ───────────────────────────────────────────────────────────
     if msg_type == "text" and text_body == "reset":
         clear_user_state("car", from_number)
         clear_user_state("bedbug", from_number)
         clear_user_state("mold", from_number)
 
-        # Send the 1msg‐approved template “main_menu_v2”
+        # Send the approved main_menu_v2 template
         send_template_message(
             to=from_number,
             template_name=MAIN_MENU_TEMPLATE,
-            template_params=["there"]  # fill {{1}} in template
+            template_params=["there"]
         )
         return Response(status=200)
 
     # ───────────────────────────────────────────────────────────
-    # 5) If it’s a quick‐reply BUTTON payload
-    #    (Facebook style: msg_type=="button")
-    #    (1msg style: msg_type=="button_reply" under message["interactive"])
+    # 5) Handle quick‐reply BUTTON payloads
+    #    - Facebook style: msg_type == "button", nested message["button"]["payload"]
+    #    - 1msg style minimal: msg_type == "button", but no nested "button"
     # ───────────────────────────────────────────────────────────
     if msg_type == "button":
-        button_id = message["button"]["payload"]
-        if button_id == "help_pest":
+        # Try nested payload first
+        if "button" in message and isinstance(message["button"], dict) and "payload" in message["button"]:
+            button_id = message["button"]["payload"]
+        else:
+            # Fallback: use the raw body text as button_id
+            button_id = message.get("body", "").strip().lower()
+
+        # Normalize button_id to lowercase
+        button_id = button_id.lower()
+
+        # Check which button was pressed:
+        if button_id in ["help_pest", "need help on pest!"]:
             set_user_state("car", from_number, {})
             return handle_car_fumigation_flow(from_number, message, API_KEY, BASE_URL)
-        if button_id == "help_mold":
+
+        if button_id in ["help_mold", "need help on mold!"]:
             set_user_state("mold", from_number, {})
             return handle_mold_flow(from_number, message, API_KEY, BASE_URL)
-        if button_id == "live_human":
+
+        if button_id in ["live_human", "live human"]:
             send_text_message({
                 "to": from_number,
                 "type": "text",
-                "text": { "body": "Sure—one of our agents will be with you shortly." },
+                "text": {"body": "Sure—one of our agents will be with you shortly."},
                 "messaging_product": "whatsapp"
             })
             return Response(status=200)
 
-    #  ─── 1msg’s quick‐reply “button_reply” comes under message["interactive"]:
-    if msg_type == "interactive" and message["interactive"].get("type") == "button_reply":
-        button_id = message["interactive"]["button_reply"]["id"]
-        if button_id == "help_pest":
-            set_user_state("car", from_number, {})
-            return handle_car_fumigation_flow(from_number, message, API_KEY, BASE_URL)
-        if button_id == "help_mold":
-            set_user_state("mold", from_number, {})
-            return handle_mold_flow(from_number, message, API_KEY, BASE_URL)
-        if button_id == "live_human":
-            send_text_message({
-                "to": from_number,
-                "type": "text",
-                "text": { "body": "Sure—one of our agents will be with you shortly." },
-                "messaging_product": "whatsapp"
-            })
-            return Response(status=200)
+        # Unrecognized button payload
+        send_text_message({
+            "to": from_number,
+            "type": "text",
+            "text": {"body": "Sorry, I didn’t understand that selection. Type ‘reset’ to start over."},
+            "messaging_product": "whatsapp"
+        })
+        return Response(status=200)
 
     # ───────────────────────────────────────────────────────────
-    # 6) If the user is already in “car” flow, delegate
+    # 6) Delegate to flows if user is already inside one
     # ───────────────────────────────────────────────────────────
     user_state_car = get_user_state("car", from_number)
     if user_state_car:
@@ -164,7 +167,7 @@ def receive_message():
         return handle_mold_flow(from_number, message, API_KEY, BASE_URL)
 
     # ───────────────────────────────────────────────────────────
-    # 7) Otherwise, raw “hello” or any other text → show main menu TEMPLATE
+    # 7) Otherwise, any other text: show main menu template
     # ───────────────────────────────────────────────────────────
     if msg_type == "text":
         send_template_message(

@@ -13,15 +13,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '20' # Compatible with Chatwoot (NOT 18 or 23)
+      - name: Set up Node.js 23 manually
+        run: |
+          curl -fsSL https://deb.nodesource.com/setup_23.x | sudo -E bash -
+          sudo apt-get install -y nodejs
+          node -v
+          npm -v
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: 3.4.4 # Match your Gemfile
+          ruby-version: 3.4.4
 
       - name: Install system dependencies
         run: |
@@ -47,3 +49,4 @@ jobs:
           git add public/packs
           git commit -m "chore: auto-compiled assets [skip ci]" || echo "No changes to commit"
           git push
+

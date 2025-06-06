@@ -528,10 +528,16 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
 
     # ─── Helper to extract quick-reply payload ───
     def extract_button_payload(msg: dict) -> str:
-        if msg.get("type") == "button":
-            return msg["button"]["payload"]
-        if msg.get("type") == "interactive" and msg["interactive"].get("type") == "button_reply":
-            return msg["interactive"]["button_reply"]["id"]
+        msg_type_inner = msg.get("type", "")
+        # 1MSG “button” → top-level "body"
+        if msg_type_inner == "button":
+            return msg.get("body", "").strip()
+        # 1MSG “interactive.button_reply” → nested
+        if msg_type_inner == "interactive" and msg["interactive"].get("type") == "button_reply":
+            return msg["interactive"]["button_reply"].get("id", "").strip()
+        # 360dialog “button_reply” → nested msg["button"]["payload"]
+        if msg_type_inner == "button_reply" and "button" in msg:
+            return msg["button"].get("payload", "").strip()
         return ""
 
     # Retrieve or initialize state
@@ -568,7 +574,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
     # ----------------------------------------------------------------
     # 2) Handle quick-reply BUTTONS (either "button" or "interactive.button_reply")
     # ----------------------------------------------------------------
-    if msg_type in ["button", "interactive"]:
+    if msg_type in ["button", "interactive", "button_reply"]:
         payload = extract_button_payload(message)
         if payload:
             payload_lower = payload.lower()
@@ -958,7 +964,6 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
 
         # F) collect_time_option: user typed a free-form time
         if step == "collect_time_option":
-            # Attempt to parse free-form time exactly as above
             user_time = text_body.strip().upper().replace(" ", "")
             parsed_time = None
             try:
@@ -1040,7 +1045,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                     f"• Vehicle Model: {vehicle_model}\n"
                     f"• Vehicle Number: {vehicle_number}\n"
                     f"• Parking Address: {parking_address}\n\n"
-                    "We're connecting you to a live agent now. Meanwhile, you may review our Car Fumigation FAQ:"
+                    "We're connecting you to a live agent now. Meanwhile, you may review our Car Fumigation FAQ:" 
                 )
             )
             # Show FAQ for any last-minute questions

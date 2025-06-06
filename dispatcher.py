@@ -1,4 +1,5 @@
 # dispatcher.py
+
 import os
 import json
 from flask import Flask, request, make_response
@@ -13,27 +14,28 @@ from helpers import (
 )
 from flows import car_fumigation
 from flows import mold
-from flows import bedbug  # Import the new bedbug flow
+from flows import bedbug  # Import the bedbug flow
 
 app = Flask(__name__)
 
 VERIFY_TOKEN    = os.getenv("VERIFY_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 
-# Prefixes for Redis keys
+# Prefixes for Redis keys (used by your helper functions)
 REDIS_PREFIX_CAR  = "carfum"
 REDIS_PREFIX_MOLD = "mold"
 REDIS_PREFIX_BED  = "bedbug"
 
-# Main menu template name (must match your 1MSG template)
+# Name of your main menu template (must be defined in 1MSG Dashboard)
 MAIN_MENU_TEMPLATE = os.getenv("MAIN_MENU_TEMPLATE", "main_menu_v2")
 
 
 @app.route("/webhook", methods=["GET"])
 def verify_webhook():
     """
-    1MSG will send GET /webhook?hub.verify_token=<VERIFY_TOKEN>&hub.challenge=<challenge>
-    We must respond with the challenge if the token matches.
+    When you configure the webhook URL in 1MSG, they send a GET request:
+      /webhook?hub.verify_token=<VERIFY_TOKEN>&hub.challenge=<challenge>
+    We must echo back the 'hub.challenge' if the token matches.
     """
     mode      = request.args.get("hub.mode")
     token     = request.args.get("hub.verify_token")
@@ -48,61 +50,63 @@ def verify_webhook():
 @app.route("/webhook", methods=["POST"])
 def receive_message():
     """
-    Main webhook to receive incoming 1MSG messages. 1MSG’s POST body looks like:
-    {
-      "messages": [
-        {
-          "chatId": "6589123456@c.us",
-          "type": "chat" | "button" | "interactive",
-          "body": "hello",           # free-text when type=="chat"
-          "button_reply": {"id":"..."},  # only if type=="button"
-          "interactive": {
-             "type": "button_reply" | "list_reply",
-             "button_reply": {"id": "..."},
-             "list_reply":   {"id": "...", "title": "..."}
-          },
-          ...
-        }
-      ],
-      "instanceId": "VANxxxx"
-    }
+    Main webhook to receive incoming messages from 1MSG.
+    1MSG’s POST body structure:
+      {
+        "messages": [
+          {
+            "chatId": "6589123456@c.us",
+            "type": "chat" | "button" | "interactive",
+            "body": "hello",                      # only if type == "chat" or type == "button"
+            "button_reply": {"id":"quick_reply_1"},  # if type == "button" and it’s a template button
+            "interactive": {
+               "type": "list_reply" or "button_reply",
+               "list_reply": {"id":"option_1", "title":"Option 1"},
+               "button_reply": {"id":"btn_1", "title":"Button 1"}
+            },
+            "senderName": "Customer",
+            ...
+          }
+        ],
+        "instanceId": "VAN388218473"
+      }
     """
     payload = request.get_json()
+    print(f"[DEBUG] Received raw message payload: {json.dumps(payload)}")
 
-    # 1) Pull out the top-level "messages" array (instead of entry→changes→value→messages)
+    # 1) Extract the "messages" array instead of entry/changes/value/messages
     messages = payload.get("messages", [])
     if not messages:
         return make_response("No messages to process", 200)
 
     message = messages[0]
-    # 2) In 1MSG, the chat ID is under "chatId":
     from_number = message.get("chatId")
-    msg_type    = message.get("type")  # "chat", "button", "interactive"
-    print(f"[DEBUG] Received raw message from {from_number}: type={msg_type} payload={json.dumps(message)}")
+    msg_type    = message.get("type")
+    print(f"[DEBUG] from={from_number}, type={msg_type}, message={json.dumps(message)}")
 
-    # ----------------------------------------
+    # ——————————————————————————————————————————————
     # A) Handle plain-text ("chat") messages
-    # ----------------------------------------
+    # ——————————————————————————————————————————————
     if msg_type == "chat":
         text_body = message.get("body", "").strip().lower()
         print(f"[DEBUG] Received TEXT from {from_number}: '{text_body}'")
 
-        # “reset” → clear all flows, re‐send main menu template
+        # ——— “reset” command: clear all states + send main menu ———
         if text_body == "reset":
             print(f"[DEBUG] 'reset' detected for {from_number}. Clearing all states and sending main menu.")
-            clear_user_state(REDIS_PREFIX_CAR,  from_number)
+            clear_user_state(REDIS_PREFIX_CAR, from_number)
             clear_user_state(REDIS_PREFIX_MOLD, from_number)
-            clear_user_state(REDIS_PREFIX_BED,  from_number)
+            clear_user_state(REDIS_PREFIX_BED, from_number)
 
-            # Send the main menu template
+            # Send the main menu template with no parameters
             send_template_message(
                 to=from_number,
                 template_name=MAIN_MENU_TEMPLATE,
-                template_params=[""]
+                template_params=[]
             )
             return make_response("Reset: Main menu sent", 200)
 
-        # “Need help on Mold!” → start Mold flow
+        # ——— “Need help on Mold!” → start Mold flow ———
         if text_body in ["need help on mold!", "need help on mold"]:
             print(f"[DEBUG] 'need help on mold!' detected for {from_number}. Starting mold flow.")
             clear_user_state(REDIS_PREFIX_MOLD, from_number)
@@ -116,25 +120,22 @@ def receive_message():
             )
             return make_response("Mold flow started", 200)
 
-        # “Need help on Pest!” → start Car (Pest) flow
+        # ——— “Need help on Pest!” → start Car (Pest) flow ———
         if text_body in ["need help on pest!", "need help on pest"]:
             print(f"[DEBUG] 'need help on pest!' detected for {from_number}. Starting pest flow.")
-            # Clear any previous Car or Bedbug states
             clear_user_state(REDIS_PREFIX_CAR, from_number)
             clear_user_state(REDIS_PREFIX_BED, from_number)
 
-            # 1) Mark CURRENT_FLOW = CAR
             new_state = {"step": "choose_service"}
             set_user_state(REDIS_PREFIX_CAR, from_number, new_state)
 
-            # 2) Send the Pest Control Services list
             car_fumigation.send_pest_control_list(
                 to=from_number,
                 phone_number_id=PHONE_NUMBER_ID
             )
             return make_response("Pest flow started", 200)
 
-        # If none of the above TEXT commands match, check if we’re already in a flow:
+        # ——— If user is already in a Mold flow, delegate TEXT to it ———
         state_mold = get_user_state(REDIS_PREFIX_MOLD, from_number)
         if state_mold:
             print(f"[DEBUG] Delegating TEXT to handle_mold_flow for {from_number}, step={state_mold.get('step')}")
@@ -145,6 +146,7 @@ def receive_message():
             )
             return make_response("Mold flow TEXT handled", 200)
 
+        # ——— If user is already in a Bedbug flow, delegate TEXT to it ———
         state_bed = get_user_state(REDIS_PREFIX_BED, from_number)
         if state_bed:
             print(f"[DEBUG] Delegating TEXT to handle_bedbug_flow for {from_number}, step={state_bed.get('step')}")
@@ -155,6 +157,7 @@ def receive_message():
             )
             return make_response("Bedbug flow TEXT handled", 200)
 
+        # ——— If user is already in a Car (Pest) flow, delegate TEXT to it ———
         state_car = get_user_state(REDIS_PREFIX_CAR, from_number)
         if state_car:
             print(f"[DEBUG] Delegating TEXT to handle_car_fumigation_flow for {from_number}, step={state_car.get('step')}")
@@ -165,26 +168,32 @@ def receive_message():
             )
             return make_response("Car flow TEXT handled", 200)
 
-        # No flow active → send fallback prompt
+        # ——— No active flow & unrecognized text → send fallback prompt ———
         send_text_message(
             to=from_number,
             body="Please tap 'Need help on Pest!' or 'Need help on Mold!' to begin."
         )
         return make_response("No active flow & TEXT fallback sent", 200)
 
-    # ----------------------------------------
-    # B) Handle quick‐reply BUTTON payloads
-    # ----------------------------------------
+    # ——————————————————————————————————————————————
+    # B) Handle quick-reply BUTTON or interactive BUTTON_REPLY
+    # ——————————————————————————————————————————————
     if msg_type in ["button", "interactive"]:
-        # Extract a BUTTON payload:
         def extract_button_payload(msg: dict) -> str:
-            # 1MSG “button” → top‐level "body"
-            if msg.get("type") == "button":
+            """
+            1MSG “button” → top-level "body"
+            1MSG interactive with type=="button_reply" → msg["interactive"]["button_reply"]["id"]
+            """
+            msg_type_inner = msg.get("type", "")
+            # If it’s a 1MSG quick-reply, type == "button", text is in msg["body"]
+            if msg_type_inner == "button":
                 return msg.get("body", "").strip()
-            # 1MSG interactive with a “button_reply”
-            if (msg.get("type") == "interactive"
-                    and msg["interactive"].get("type") == "button_reply"):
+
+            # If interactive type == "button_reply"
+            if (msg_type_inner == "interactive" and
+                msg.get("interactive", {}).get("type") == "button_reply"):
                 return msg["interactive"]["button_reply"].get("id", "").strip()
+
             return ""
 
         payload = extract_button_payload(message)
@@ -192,7 +201,7 @@ def receive_message():
             payload_lower = payload.lower()
             print(f"[DEBUG] Received BUTTON payload='{payload_lower}' from {from_number}")
 
-            # *** Main‐menu buttons: “Need help on Mold!” and “Need help on Pest!” ***
+            # ——— Main-menu button “Need help on Mold!” ———
             if payload_lower in ["need help on mold!", "need help on mold"]:
                 print(f"[DEBUG] 'need help on mold!' detected via BUTTON for {from_number}.")
                 clear_user_state(REDIS_PREFIX_MOLD, from_number)
@@ -206,6 +215,7 @@ def receive_message():
                 )
                 return make_response("Mold flow started via BUTTON", 200)
 
+            # ——— Main-menu button “Need help on Pest!” ———
             if payload_lower in ["need help on pest!", "need help on pest"]:
                 print(f"[DEBUG] 'need help on pest!' detected via BUTTON for {from_number}.")
                 clear_user_state(REDIS_PREFIX_CAR, from_number)
@@ -220,7 +230,7 @@ def receive_message():
                 )
                 return make_response("Pest flow started via BUTTON", 200)
 
-            # If a flow is already active, delegate the BUTTON payload to that flow:
+            # ——— If in Mold flow already, delegate BUTTON to it ———
             state_mold = get_user_state(REDIS_PREFIX_MOLD, from_number)
             if state_mold:
                 print(f"[DEBUG] Delegating BUTTON to handle_mold_flow for {from_number}, step={state_mold.get('step')}")
@@ -231,6 +241,7 @@ def receive_message():
                 )
                 return make_response("Mold flow BUTTON handled", 200)
 
+            # ——— If in Bedbug flow already, delegate BUTTON to it ———
             state_bed = get_user_state(REDIS_PREFIX_BED, from_number)
             if state_bed:
                 print(f"[DEBUG] Delegating BUTTON to handle_bedbug_flow for {from_number}, step={state_bed.get('step')}")
@@ -241,6 +252,7 @@ def receive_message():
                 )
                 return make_response("Bedbug flow BUTTON handled", 200)
 
+            # ——— If in Car (Pest) flow already, delegate BUTTON to it ———
             state_car = get_user_state(REDIS_PREFIX_CAR, from_number)
             if state_car:
                 print(f"[DEBUG] Delegating BUTTON to handle_car_fumigation_flow for {from_number}, step={state_car.get('step')}")
@@ -251,21 +263,21 @@ def receive_message():
                 )
                 return make_response("Car flow BUTTON handled", 200)
 
-            # No flow active but some other button was pressed
+            # ——— No active flow & unknown BUTTON → fallback text ———
             send_text_message(
                 to=from_number,
                 body="Please tap 'Need help on Pest!' or 'Need help on Mold!' to begin."
             )
             return make_response("No active flow for BUTTON, fallback sent", 200)
 
-    # ----------------------------------------
-    # C) Handle LIST‐REPLY (“interactive.list_reply”) payloads
-    # ----------------------------------------
-    if msg_type == "interactive" and message["interactive"].get("type") == "list_reply":
+    # ——————————————————————————————————————————————
+    # C) Handle interactive LIST replies
+    # ——————————————————————————————————————————————
+    if msg_type == "interactive" and message.get("interactive", {}).get("type") == "list_reply":
         selected_id = message["interactive"]["list_reply"]["id"]
         print(f"[DEBUG] Received LIST reply '{selected_id}' from {from_number}")
 
-        # 1) If user is in Bedbug flow, delegate
+        # 1) If in Bedbug flow, delegate LIST to it
         state_bed = get_user_state(REDIS_PREFIX_BED, from_number)
         if state_bed:
             print(f"[DEBUG] Delegating LIST to handle_bedbug_flow for {from_number}, step={state_bed.get('step')}")
@@ -276,15 +288,13 @@ def receive_message():
             )
             return make_response("Bedbug flow LIST handled", 200)
 
-        # 2) If user is in Car (Pest) flow, but also check if they tapped “bedbugs” under choose_service
+        # 2) If in Car (Pest) flow, check if they chose “bedbugs” under choose_service
         state_car = get_user_state(REDIS_PREFIX_CAR, from_number)
         if state_car:
-            # If step == "choose_service" and selected_id == "bedbugs", switch to Bedbug flow
             if state_car.get("step") == "choose_service" and selected_id == "bedbugs":
-                print(f"[DEBUG] User chose bedbugs under pest services. Clearing Car flow and starting Bedbug flow.")
+                print(f"[DEBUG] User chose bedbugs under pest services. Starting Bedbug flow.")
                 clear_user_state(REDIS_PREFIX_CAR, from_number)
 
-                # Initialize Bedbug state and send first bedbug prompt
                 new_state = {"step": "bedbug_option", "affected_areas": []}
                 set_user_state(REDIS_PREFIX_BED, from_number, new_state)
 
@@ -294,7 +304,7 @@ def receive_message():
                 )
                 return make_response("Started Bedbug flow via LIST choice", 200)
 
-            # Otherwise, delegate to Car Fumigation flow
+            # Otherwise, delegate LIST to Car (Pest) flow
             print(f"[DEBUG] Delegating LIST to handle_car_fumigation_flow for {from_number}, step={state_car.get('step')}")
             car_fumigation.handle_car_fumigation_flow(
                 from_number=from_number,
@@ -303,7 +313,7 @@ def receive_message():
             )
             return make_response("Car flow LIST handled", 200)
 
-        # 3) If user is in Mold flow, delegate
+        # 3) If in Mold flow, delegate LIST to it
         state_mold = get_user_state(REDIS_PREFIX_MOLD, from_number)
         if state_mold:
             print(f"[DEBUG] Delegating LIST to handle_mold_flow for {from_number}, step={state_mold.get('step')}")
@@ -314,24 +324,23 @@ def receive_message():
             )
             return make_response("Mold flow LIST handled", 200)
 
-        # 4) No active flow: send fallback
+        # 4) No active flow & unknown LIST → fallback text
         send_text_message(
             to=from_number,
             body="Please tap 'Need help on Pest!' or 'Need help on Mold!' to begin."
         )
         return make_response("No flow active for LIST, fallback sent", 200)
 
-    # ----------------------------------------
+    # ——————————————————————————————————————————————
     # D) Fallback for any other msg_type
-    # ----------------------------------------
+    # ——————————————————————————————————————————————
     print(f"[DEBUG] Received unsupported msg_type='{msg_type}' from {from_number}. Sending fallback.")
-    send_template_message(
+    send_text_message(
         to=from_number,
-        template_name=MAIN_MENU_TEMPLATE,
-        template_params=[
-            "Sorry, I can’t handle that type of message. "
+        body=(
+            "Sorry, I can’t handle that type of message.  \n"
             "Please tap 'Need help on Pest!' or 'Need help on Mold!' or type 'reset'."
-        ]
+        )
     )
     return make_response("Unsupported message type fallback sent", 200)
 

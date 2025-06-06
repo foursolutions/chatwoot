@@ -47,6 +47,8 @@ def webhook():
           "text": { "body": "hello" },             # for type "text"
           "button_reply": { "id": "btn_id", ... }, # for type "button_reply"
           "list_reply":   { "id": "row_id", ... }  # for type "list_reply"
+          "fromMe": True or False,                 # indicates bot‐sent vs. user‐sent
+          "self": 1 or 0,                          # similar “fromMe” indicator
           ...
         }
       ]
@@ -63,15 +65,23 @@ def webhook():
     chat_id = msg.get("chatId")   # e.g. "6587788080@c.us"
     msg_type = msg.get("type")    # "text", "chat", "button", "button_reply", "list_reply", etc.
 
+    # ─────────────────────────────────────────────────────────────────
+    # 0) Ignore messages that the bot itself sent (to prevent infinite loop)
+    #    1MSG indicates bot‐sent messages via "fromMe": True or "self": 1
+    # ─────────────────────────────────────────────────────────────────
+    if msg.get("fromMe") is True or msg.get("self") == 1:
+        # Simply acknowledge without taking any action
+        return jsonify({}), 200
+
     print(f"🔍 chat_id = {chat_id}, type = {msg_type}")
 
     # ─────────────────────────────────────────────────────────────────
-    # Normalize incoming_text across payload types
+    # 1) Normalize incoming_text across payload types
     # ─────────────────────────────────────────────────────────────────
     incoming_text = ""
 
     if msg_type in ("text", "chat", "conversation"):
-        # 1MSG sometimes uses top-level "body", or nested "text" / "chat" with "body"
+        # 1MSG sometimes uses top-level "body", or nested "text"/"chat" with "body"
         incoming_text = (
             msg.get("text", {}).get("body", "")
             or msg.get("chat", {}).get("body", "")
@@ -94,7 +104,7 @@ def webhook():
 
 
     # ─────────────────────────────────────────────────────────────────
-    # 1) If user typed/tapped "reset", clear all flow-states and re-send Main Menu
+    # 2) If user typed/tapped "reset", clear all flow-states and re-send Main Menu
     # ─────────────────────────────────────────────────────────────────
     if incoming_text == "reset":
         print("ℹ️ Reset command detected. Clearing all flow states for:", chat_id)
@@ -119,7 +129,7 @@ def webhook():
 
 
     # ─────────────────────────────────────────────────────────────────
-    # 2) If user is already mid-flow, delegate to that flow’s handler
+    # 3) If user is already mid-flow, delegate to that flow’s handler
     # ─────────────────────────────────────────────────────────────────
     state_car  = get_user_state("CAR_FUM", chat_id)
     state_mold = get_user_state("MOLD",   chat_id)
@@ -145,7 +155,7 @@ def webhook():
 
 
     # ─────────────────────────────────────────────────────────────────
-    # 3) No flow is active, so check “start-flow” button labels / keywords
+    # 4) No flow is active, so check “start-flow” button labels / keywords
     # ─────────────────────────────────────────────────────────────────
     if incoming_text == "need help on pest!":
         print("ℹ️ Starting Car Fumigation flow for", chat_id)
@@ -170,7 +180,7 @@ def webhook():
 
 
     # ─────────────────────────────────────────────────────────────────
-    # 4) Nothing matched → re-send main_menu_v2 template
+    # 5) Nothing matched → re-send main_menu_v2 template
     # ─────────────────────────────────────────────────────────────────
     print("⚠️ No active flow or command matched; re‐sending main_menu_v2.")
     try:

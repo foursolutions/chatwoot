@@ -26,7 +26,8 @@ REDIS_PREFIX_CAR  = "carfum"
 REDIS_PREFIX_MOLD = "mold"
 REDIS_PREFIX_BED  = "bedbug"
 
-# Name of your main menu template (must be defined in 1MSG Dashboard)
+# Name of your main menu template (must be defined in 1MSG Dashboard),
+# and it expects exactly ONE body parameter ({{1}}).
 MAIN_MENU_TEMPLATE = os.getenv("MAIN_MENU_TEMPLATE", "main_menu_v2")
 
 
@@ -58,13 +59,11 @@ def receive_message():
             "chatId": "6589123456@c.us",
             "type": "chat" | "button" | "interactive",
             "body": "hello",                      # only if type == "chat" or type == "button"
-            "button_reply": {"id":"quick_reply_1"},  # if type == "button" and it’s a template button
+            "button_reply": {"id":"quick_reply_1"},  # if type == "button"
             "interactive": {
                "type": "list_reply" or "button_reply",
-               "list_reply": {"id":"option_1", "title":"Option 1"},
-               "button_reply": {"id":"btn_1", "title":"Button 1"}
+               ...
             },
-            "senderName": "Customer",
             ...
           }
         ],
@@ -98,11 +97,12 @@ def receive_message():
             clear_user_state(REDIS_PREFIX_MOLD, from_number)
             clear_user_state(REDIS_PREFIX_BED, from_number)
 
-            # Send the main menu template with no parameters
+            # SEND the main menu template with EXACTLY ONE placeholder string.
+            # If you want a blank placeholder, just send "".
             send_template_message(
                 to=from_number,
                 template_name=MAIN_MENU_TEMPLATE,
-                template_params=[]
+                template_params=[""]   # ← exactly one element
             )
             return make_response("Reset: Main menu sent", 200)
 
@@ -190,8 +190,8 @@ def receive_message():
                 return msg.get("body", "").strip()
 
             # If interactive type == "button_reply"
-            if (msg_type_inner == "interactive" and
-                msg.get("interactive", {}).get("type") == "button_reply"):
+            if (msg_type_inner == "interactive"
+                    and msg.get("interactive", {}).get("type") == "button_reply"):
                 return msg["interactive"]["button_reply"].get("id", "").strip()
 
             return ""

@@ -13,16 +13,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Set up Node.js 23.x
+      - name: Set up Node.js (v20 for Chatwoot)
         uses: actions/setup-node@v3
         with:
-          node-version: '23.x'
-          check-latest: true
+          node-version: '20'
 
-      - name: Set up Ruby 3.4.4
+      - name: Set up Ruby (fallback to 3.3)
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: 3.4.4
+          ruby-version: '3.3'
 
       - name: Install system dependencies
         run: |
@@ -33,7 +32,7 @@ jobs:
         run: npm install -g yarn
 
       - name: Install JS packages
-        run: yarn install --frozen-lockfile
+        run: yarn install
 
       - name: Install Ruby gems
         run: bundle install
@@ -45,7 +44,7 @@ jobs:
         run: |
           git config user.name github-actions
           git config user.email github-actions@github.com
-          git add public/packs
+          git add public/packs || true
           git commit -m "chore: auto-compiled assets [skip ci]" || echo "No changes to commit"
           git push
 

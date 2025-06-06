@@ -114,12 +114,12 @@ def send_template_message(
     if template_params is None:
         template_params = []
 
-    # Convert each simple string into the expected {type:"text", text:"..."} object
+    # Convert each simple string into the expected {type:"TEXT", payload:"..."} object
     params_payload = []
     for txt in template_params:
         params_payload.append({
-            "type": "text",   # lowercase "text" is what 1msg expects
-            "text": txt
+            "type": "TEXT",
+            "payload": txt
         })
 
     payload = {

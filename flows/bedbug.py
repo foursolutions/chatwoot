@@ -2,494 +2,340 @@
 
 import os
 import time
+from flask import Response
+
 from helpers import (
     get_user_state,
     set_user_state,
     clear_user_state,
     send_text_message,
-    send_template_message,
     send_list_message
 )
 
-# ─── Constants & Static Data ─────────────────────────────────────────────────
-BEDBUG_PREFIX = "bedbug"
-
-# Pre-defined area options for Bedbug quoting:
-BEDBUG_AREAS = [
-    { "id": "bedbug_area_bed",       "title": "Bedroom(s)",        "description": "Where you sleep" },
-    { "id": "bedbug_area_living",    "title": "Living Area",       "description": "Living room, sofas, etc." },
-    { "id": "bedbug_area_whole",     "title": "Whole Unit",        "description": "Entire house/apartment" },
-    { "id": "bedbug_area_commercial","title": "Commercial Space",  "description": "Office / Retail / Other" }
-]
-
-# Pre-set bedroom-count options:
-BEDROOM_COUNT_ROWS = [
-    { "id": "bedbug_count_1", "title": "1",   "description": "" },
-    { "id": "bedbug_count_2", "title": "2",   "description": "" },
-    { "id": "bedbug_count_3", "title": "3",   "description": "" },
-    { "id": "bedbug_count_4", "title": "4",   "description": "" },
-    { "id": "bedbug_count_5", "title": "5+",  "description": "5 or more bedrooms" }
-]
-
-
-# ─── 1) send_bedbug_option_prompt ──────────────────────────────────────────────
-def send_bedbug_option_prompt(to: str, phone_number_id: str):
+# ────────────────────────────────────────────────────────────────────────────────
+# send_bedbug_removal_faq: Step 1 of Bedbug flow (FAQ)
+# ────────────────────────────────────────────────────────────────────────────────
+def send_bedbug_removal_faq(to: str) -> dict:
     """
-    Sends the initial Bedbug menu with three buttons:
-      • Request a Quotation
-      • More Info on Service
-      • Return to Main Menu
+    Sends an interactive FAQ list for Bedbug Removal.
     """
-    text = (
-        "We are happy to help with your bedbugs issue!\n\n"
-        "Please select an option below for us to better understand what you are looking for."
+    header = "Bedbug Removal FAQ"
+    body = "Select a FAQ question:"
+    footer = "Tap an option"
+    action_button = "Select FAQ"
+
+    sections = [
+        {
+            "title": "FAQ Questions",
+            "rows": [
+                {"id": "bfq_safe",        "title": "Is it safe? Pets/Kids",   "description": "Are treatments safe?"                 },
+                {"id": "bfq_included",    "title": "Service Details",          "description": "What's included in our service?"      },
+                {"id": "bfq_warranty",    "title": "Warranty Terms",           "description": "Coverage & terms"                     },
+                {"id": "bfq_preparation", "title": "Preparation",              "description": "How to prepare your home?"            },
+                {"id": "bfq_duration",    "title": "Service Duration",         "description": "How long does it take?"               },
+                {"id": "bfq_payment",     "title": "Payment Options",          "description": "Payment methods accepted"             }
+            ]
+        }
+    ]
+
+    resp = send_list_message(
+        to=to,
+        body=body,
+        header=header,
+        footer=footer,
+        action_button=action_button,
+        sections=sections
     )
-
-    interactive_payload = {
-        "type": "button",
-        "body": { "text": text },
-        "action": {
-            "buttons": [
-                { "type": "reply", "reply": { "id": "bedbug_quote",      "title": "Request a Quotation" } },
-                { "type": "reply", "reply": { "id": "bedbug_more_info",   "title": "More Info on Service" } },
-                { "type": "reply", "reply": { "id": "bedbug_return_main", "title": "Return to Main Menu" } }
-            ]
-        }
-    }
-
-    resp = send_text_message({
-        "to": to,  # plain digits (no @c.us)
-        "type": "interactive",
-        "messaging_product": "whatsapp",
-        "interactive": interactive_payload
-    })
-    print(f"[DEBUG] send_bedbug_option_prompt → {resp}")
+    print(f"[DEBUG] send_bedbug_removal_faq → {resp}")
+    return resp
 
 
-# ─── 2) send_bedbug_area_selection ──────────────────────────────────────────────
-def send_bedbug_area_selection(to: str, phone_number_id: str):
+# ────────────────────────────────────────────────────────────────────────────────
+# process_bedbug_faq_response: After user taps a bfq_ row, send answer
+# ────────────────────────────────────────────────────────────────────────────────
+def process_bedbug_faq_response(to: str, faq_id: str) -> None:
     """
-    Sends an interactive list of BEDBUG_AREAS (excluding ones already chosen).
-    """
-    state    = get_user_state(BEDBUG_PREFIX, to) or {}
-    selected = state.get("affected_areas", [])
-
-    # Filter out areas that are already in “affected_areas”
-    available = [area for area in BEDBUG_AREAS if area["title"] not in selected]
-    if not available:
-        # If no more options remain, skip directly to bedroom‐count step
-        _maybe_ask_bedroom_count(to, phone_number_id)
-        return
-
-    rows = [
-        { "id": item["id"], "title": item["title"], "description": item["description"] }
-        for item in available
-    ]
-
-    interactive_payload = {
-        "type": "list",
-        "header": { "type": "text", "text": "Select Affected Area(s)" },
-        "body":   { "text": "Which area is affected by bedbugs? You may add multiple." },
-        "footer": { "text": "Tap to choose" },
-        "action": {
-            "button": "Select Area",
-            "sections": [
-                { "title": "Possible Areas", "rows": rows }
-            ]
-        }
-    }
-
-    resp = send_text_message({
-        "to": to,  # plain digits
-        "type": "interactive",
-        "messaging_product": "whatsapp",
-        "interactive": interactive_payload
-    })
-    print(f"[DEBUG] send_bedbug_area_selection → {resp}")
-
-    state["step"] = "bedbug_waiting_area_selection"
-    set_user_state(BEDBUG_PREFIX, to, state)
-
-
-# ─── 3) _maybe_ask_bedroom_count (helper) ─────────────────────────────────────────
-def _maybe_ask_bedroom_count(to: str, phone_number_id: str):
-    """
-    If user has finished picking areas, move to bedroom‐count step.
-    """
-    state = get_user_state(BEDBUG_PREFIX, to) or {}
-    # Mark that we’re waiting for bedroom count
-    state["step"] = "bedbug_waiting_bedroom_count"
-    set_user_state(BEDBUG_PREFIX, to, state)
-
-    interactive_payload = {
-        "type": "list",
-        "header": { "type": "text", "text": "Number of Bedrooms Affected" },
-        "body":   { "text": "How many bedrooms are affected?" },
-        "footer": { "text": "Tap to choose" },
-        "action": {
-            "button": "Select Count",
-            "sections": [
-                { "title": "Bedrooms", "rows": BEDROOM_COUNT_ROWS }
-            ]
-        }
-    }
-
-    resp = send_text_message({
-        "to": to,
-        "type": "interactive",
-        "messaging_product": "whatsapp",
-        "interactive": interactive_payload
-    })
-    print(f"[DEBUG] _maybe_ask_bedroom_count → {resp}")
-
-
-# ─── 4) send_bedbug_area_add_confirmation_prompt ─────────────────────────────────
-def send_bedbug_area_add_confirmation_prompt(to: str, phone_number_id: str):
-    """
-    After the user picks 1 area (or more), this asks “Would you like to add another area?”
-    via Yes/No button interactive.
-    """
-    text = "Would you like to add another affected area?"
-
-    interactive_payload = {
-        "type": "button",
-        "body": { "text": text },
-        "action": {
-            "buttons": [
-                { "type": "reply", "reply": { "id": "bedbug_confirm_yes", "title": "Yes" } },
-                { "type": "reply", "reply": { "id": "bedbug_confirm_no",  "title": "No"  } }
-            ]
-        }
-    }
-
-    resp = send_text_message({
-        "to": to,
-        "type": "interactive",
-        "messaging_product": "whatsapp",
-        "interactive": interactive_payload
-    })
-    print(f"[DEBUG] send_bedbug_area_add_confirmation_prompt → {resp}")
-
-    state = get_user_state(BEDBUG_PREFIX, to) or {}
-    state["step"] = "bedbug_waiting_area_add_confirmation"
-    set_user_state(BEDBUG_PREFIX, to, state)
-
-
-# ─── 5) send_bedbug_summary ─────────────────────────────────────────────────────
-def send_bedbug_summary(to: str, phone_number_id: str):
-    """
-    Summarizes all collected bedbug details and asks for final confirmation.
-    Shows a Yes/No interactive at the end.
-    """
-    state = get_user_state(BEDBUG_PREFIX, to) or {}
-    data  = state
-
-    # Build summary text
-    areas         = data.get("affected_areas", [])
-    bedroom_count = data.get("bedbug_bedroom_count", "Not provided")
-    overall_count = data.get("bedbug_count", "Not provided")
-
-    summary = "Bedbug Details Confirmation\n\n"
-    summary += "Affected Area(s):\n"
-    if areas:
-        for idx, area in enumerate(areas, start=1):
-            summary += f"{idx}. {area}\n"
-    else:
-        summary += "None\n"
-    summary += f"\nNumber of Bedrooms Affected: {bedroom_count}\n"
-    summary += f"Overall Bedbug Count Estimate: {overall_count}\n\n"
-    summary += "Is this information correct?"
-
-    interactive_payload = {
-        "type": "button",
-        "body": { "text": summary },
-        "action": {
-            "buttons": [
-                { "type": "reply", "reply": { "id": "bedbug_confirm_yes", "title": "Yes" } },
-                { "type": "reply", "reply": { "id": "bedbug_confirm_no",  "title": "No"  } }
-            ]
-        }
-    }
-
-    resp = send_text_message({
-        "to": to,
-        "type": "interactive",
-        "messaging_product": "whatsapp",
-        "interactive": interactive_payload
-    })
-    print(f"[DEBUG] send_bedbug_summary → {resp}")
-
-    state["step"] = "bedbug_waiting_confirmation"
-    set_user_state(BEDBUG_PREFIX, to, state)
-
-
-# ─── 6) send_bedbug_faq_list ────────────────────────────────────────────────────
-def send_bedbug_faq_list(to: str, phone_number_id: str):
-    """
-    Sends an interactive list of Bedbug‐related FAQs.
-    """
-    faq_rows = [
-        { "id": "bbfaq_safety",      "title": "Is it safe for kids & pets?",            "description": "" },
-        { "id": "bbfaq_service_info","title": "What does service include?",            "description": "" },
-        { "id": "bbfaq_preparation", "title": "How to prepare before service?",          "description": "" },
-        { "id": "bbfaq_duration",    "title": "How long will it take?",                 "description": "" },
-        { "id": "bbfaq_warranty",    "title": "Warranty / Guarantee details",           "description": "" },
-        { "id": "bbfaq_payment",     "title": "Payment methods & options",               "description": "" }
-    ]
-
-    interactive_payload = {
-        "type": "list",
-        "header": { "type": "text", "text": "Bedbug FAQs" },
-        "body":   { "text": "Select a question for more details:" },
-        "footer": { "text": "Tap to choose" },
-        "action": {
-            "button": "Select FAQ",
-            "sections": [
-                { "title": "FAQ Topics", "rows": faq_rows }
-            ]
-        }
-    }
-
-    resp = send_text_message({
-        "to": to,
-        "type": "interactive",
-        "messaging_product": "whatsapp",
-        "interactive": interactive_payload
-    })
-    print(f"[DEBUG] send_bedbug_faq_list → {resp}")
-
-    state = get_user_state(BEDBUG_PREFIX, to) or {}
-    state["step"] = "bedbug_faq"
-    set_user_state(BEDBUG_PREFIX, to, state)
-
-
-# ─── 7) process_bedbug_faq_response ─────────────────────────────────────────────
-def process_bedbug_faq_response(to: str, faq_id: str):
-    """
-    Sends back the selected FAQ answer as a plain text message.
+    After the user taps one of the FAQ rows (id starts with "bfq_"), we send back answer,
+    then re-render the FAQ list.
     """
     faq_answers = {
-        "bbfaq_safety": (
-            "Yes—our bedbug treatments use NEA‐approved chemicals safe for families,\n"
-            "and are carefully applied to avoid risk to pets or children."
+        "bfq_safe": (
+            "Yes—our bedbug treatments are safe for kids and pets.\n\n"
+            "We only use NEA-approved chemicals.  We service homes, hospitals, hotels, etc."
         ),
-        "bbfaq_service_info": (
+        "bfq_included": (
             "Our bedbug service includes:\n"
-            "• Comprehensive inspection\n"
-            "• Heat treatment or chemical application (depending on infestation level)\n"
-            "• Post‐treatment vacuuming and sealing\n"
-            "• 30‐day warranty—re‐treatment if needed"
+            "• Furniture & flooring protection\n"
+            "• Chemical spray and heat treatment\n"
+            "• Post-service inspection within 7 days\n"
+            "• Complimentary mattress encasement (if needed)\n"
         ),
-        "bbfaq_preparation": (
-            "Before our team arrives:\n"
-            "• Remove all bedding and linens\n"
-            "• Vacuum carpets and floors\n"
-            "• Clear clutter so we can access furniture\n"
-            "• Keep pets/children away during treatment"
+        "bfq_warranty": (
+            "We provide warranty coverage for 90 days.  If bedbugs reappear within 90 days, "
+            "we’ll re-treat at no extra cost (conditions apply)."
         ),
-        "bbfaq_duration": (
-            "Typical heat or chemical bedbug treatments take 3–5 hours,\n"
-            "depending on square footage and infestation severity."
+        "bfq_preparation": (
+            "To prepare:\n"
+            "• Wash all linens & clothes in hot water.\n"
+            "• Vacuum and seal vacuum bag before disposal.\n"
+            "• Remove clutter around bed and furniture.\n"
+            "• Keep children and pets away until treatment is complete."
         ),
-        "bbfaq_warranty": (
-            "We provide a 30-day warranty on all bedbug treatments.\n"
-            "If any bedbugs return, we will re-treat at no extra charge."
+        "bfq_duration": (
+            "A typical 3-bedroom apartment takes about 2–3 hours to treat. "
+            "Larger homes may take longer depending on the infestation."
         ),
-        "bbfaq_payment": (
+        "bfq_payment": (
             "We accept:\n"
-            "• Cash on site\n"
-            "• PayNow / PayLah!\n"
-            "• Credit/Debit (Visa, Mastercard)\n"
-            "• NETS"
+            "• PayNow (UEN: 201812722M)\n"
+            "• Online bank transfer\n"
+            "• Cash on service (please prepare exact amount)\n"
         )
     }
 
-    answer_text = faq_answers.get(faq_id, "Sorry, I could not find that FAQ.")
+    answer = faq_answers.get(faq_id, "Sorry, I don’t have information on that question.")
     send_text_message({
         "to": to,
         "type": "text",
         "messaging_product": "whatsapp",
-        "text": { "body": answer_text }
+        "text": {"body": answer}
     })
 
 
-# ─── 8) handle_bedbug_flow ──────────────────────────────────────────────────────
-def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
+# ────────────────────────────────────────────────────────────────────────────────
+# send_bedbug_option_prompt: Step 2: “Request Quote / More Info / Return”
+# ────────────────────────────────────────────────────────────────────────────────
+def send_bedbug_option_prompt(to: str) -> dict:
     """
-    Main Bedbug flow dispatcher. ‘from_number’ is the full WhatsApp ID (e.g. "6587788080@c.us").
+    “Would you like to: Request a Quotation / More Info on Service / Return to Main Menu?”
+    We’ll just send a plain text that says “Reply 1, 2, or 3,” or you can send a two-button interactive.
+    For simplicity, we do plain text instructions:
+    """
+    text = (
+        "We’re happy to help with your bedbug removal!\n"
+        "Please type:\n"
+        "1️⃣ to Request a Quotation\n"
+        "2️⃣ for More Info on Service\n"
+        "3️⃣ to Return to Main Menu"
+    )
+    resp = send_text_message({
+        "to": to,
+        "type": "text",
+        "messaging_product": "whatsapp",
+        "text": {"body": text}
+    })
+    print(f"[DEBUG] send_bedbug_option_prompt(text) → {resp}")
+    return resp
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+# send_bedbug_area_selection: Step 3: show “Which room is affected?” list
+# ────────────────────────────────────────────────────────────────────────────────
+def send_bedbug_area_selection(to: str) -> dict:
+    """
+    List common areas/rooms (Bedroom, Living Room, Sofa, Mattress, etc.) via a list.
+    """
+    header = "Select Infested Areas"
+    body = "Which area is affected by bedbugs? (Choose one at a time.)"
+    footer = "Select Area"
+    action_button = "Select Area"
+
+    sections = [
+        {
+            "title": "Affected Area",
+            "rows": [
+                {"id": "area_bedroom", "title": "Bedroom",       "description": "Bed, Mattress"    },
+                {"id": "area_living",  "title": "Living Room",   "description": "Sofa, Carpets"    },
+                {"id": "area_sofa",    "title": "Sofa Only",     "description": "Just the sofa"    },
+                {"id": "area_mattress","title": "Mattress Only", "description": "Just the mattress"},
+                {"id": "area_others",  "title": "Others",        "description": "Other furniture"}
+            ]
+        }
+    ]
+
+    resp = send_list_message(
+        to=to,
+        body=body,
+        header=header,
+        footer=footer,
+        action_button=action_button,
+        sections=sections
+    )
+    print(f"[DEBUG] send_bedbug_area_selection → {resp}")
+    return resp
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+# handle_bedbug_flow: Full Bedbug flow handler
+# ────────────────────────────────────────────────────────────────────────────────
+def handle_bedbug_flow(
+    from_number: str,
+    message: dict,
+    user_state: dict
+) -> Response:
+    """
+    Drives the entire Bedbug Removal flow. We check user_state["step"], msg_type,
+    and route accordingly.
     """
     state = user_state or {}
     step  = state.get("step", "")
-    msg_type = message.get("type", "")
+    msg_type = message.get("type")  # "chat", "button", or "interactive"
 
-    # ─── A) “Reset” or “Need help on Bedbugs!” from main menu ───────────────────
-    if msg_type == "text" and message.get("body", "").strip().lower() == "reset":
-        clear_user_state(BEDBUG_PREFIX, from_number)
-        send_bedbug_option_prompt(to=from_number, phone_number_id=os.getenv("PHONE_NUMBER_ID"))
-        return
+    def extract_button_payload(msg: dict) -> str:
+        if msg.get("type") == "button":
+            return msg["button"].get("payload", "")
+        if msg.get("type") == "interactive" and msg["interactive"].get("type") == "button_reply":
+            return msg["interactive"]["button_reply"].get("id", "")
+        return ""
 
-    if msg_type == "button" and message.get("body", "").strip().lower() == "need help on bedbugs!":
-        clear_user_state(BEDBUG_PREFIX, from_number)
-        send_bedbug_option_prompt(to=from_number, phone_number_id=os.getenv("PHONE_NUMBER_ID"))
-        return
+    # ── A) If they tapped a LIST item while in “faq” step:
+    if msg_type == "interactive" and message["interactive"].get("type") == "list_reply":
+        choice_id = message["interactive"]["list_reply"]["id"]
+        print(f"[DEBUG] handle_bedbug_flow: LIST payload='{choice_id}'")
 
-    # ─── B) User tapped “Request a Quotation” / “More Info on Service” / “Return to Main Menu” ───
-    if msg_type == "button" and step == "":
-        payload = message.get("body", "").strip().lower()
-        if payload == "bedbug_quote":
-            # Begin quote: ask for first area
-            new_state = { "step": "bedbug_select_area", "affected_areas": [] }
-            set_user_state(BEDBUG_PREFIX, from_number, new_state)
-            send_bedbug_area_selection(to=from_number, phone_number_id=os.getenv("PHONE_NUMBER_ID"))
-            return
+        if step == "bedbug_faq":
+            process_bedbug_faq_response(from_number, choice_id)
+            # Re-show the FAQ afterwards:
+            send_bedbug_removal_faq(to=from_number)
+            return Response(status=200)
 
-        if payload == "bedbug_more_info":
-            # Show FAQ list
-            state["step"] = "bedbug_faq"
-            set_user_state(BEDBUG_PREFIX, from_number, state)
-            send_bedbug_faq_list(to=from_number, phone_number_id=os.getenv("PHONE_NUMBER_ID"))
-            return
-
-        if payload == "bedbug_return_main":
-            clear_user_state(BEDBUG_PREFIX, from_number)
-            # Re-send main menu template:
-            send_template_message(
-                to=from_number.split("@")[0],
-                template_name="main_menu_v2",
-                template_params=["there"]
+        if step == "bedbug_select_area":
+            state.setdefault("affected_areas", []).append(
+                message["interactive"]["list_reply"].get("title", "")
             )
-            return
+            set_user_state("bedbug", from_number, state)
 
-    # ─── C) User picked an “Affected Area” from the list ────────────────────────
-    if msg_type == "interactive" and step == "bedbug_select_area":
-        choice_id = message.get("interactive", {}).get("list_reply", {}).get("id", "")
-        if choice_id:
-            area_map = {
-                "bedbug_area_bed":       "Bedroom(s)",
-                "bedbug_area_living":    "Living Area",
-                "bedbug_area_whole":     "Whole Unit",
-                "bedbug_area_commercial": "Commercial Space"
-            }
-            selected_area = area_map.get(choice_id, "")
-            if selected_area:
-                state.setdefault("affected_areas", []).append(selected_area)
-                state["step"] = "bedbug_waiting_area_add_confirmation"
-                set_user_state(BEDBUG_PREFIX, from_number, state)
+            # After they pick “Bedroom” or “Sofa” – we ask them to “Add another?”:
+            state["step"] = "bedbug_waiting_add_area_confirmation"
+            set_user_state("bedbug", from_number, state)
 
-                # Ask "Would you like to add another area?"
-                send_bedbug_area_add_confirmation_prompt(
+            resp = send_text_message({
+                "to": from_number,
+                "type": "text",
+                "messaging_product": "whatsapp",
+                "text": {"body": "Would you like to add another infested area? (Yes or No)"}
+            })
+            return Response(status=200)
+
+        # (You can add more list replies if needed—for brevity, this covers the main cases.)
+
+    # ── B) If they tapped a BUTTON (type=="button" or "interactive" button_reply):
+    if msg_type in ["button", "interactive"]:
+        payload = extract_button_payload(message).lower()
+        print(f"[DEBUG] handle_bedbug_flow: BUTTON payload='{payload}'")
+
+        # 1) If from the main menu they tapped “Need help on Bedbug!”:
+        if payload == "need help on bedbug!":
+            clear_user_state("bedbug", from_number)
+            new_state = {"step": "bedbug_option", "affected_areas": []}
+            set_user_state("bedbug", from_number, new_state)
+            return send_bedbug_option_prompt(to=from_number)
+
+        # 2) If we are on the “bedbug_option” step:
+        if step == "bedbug_option":
+            if payload == "1️⃣" or payload == "1":
+                # Request a Quotation
+                new_state = {"step": "bedbug_select_area", "affected_areas": []}
+                set_user_state("bedbug", from_number, new_state)
+                return send_bedbug_area_selection(to=from_number)
+
+            if payload == "2️⃣" or payload == "2":
+                # More Info → show FAQ
+                state["step"] = "bedbug_faq"
+                set_user_state("bedbug", from_number, state)
+                return send_bedbug_removal_faq(to=from_number)
+
+            if payload == "3️⃣" or payload == "3":
+                # Return to Main Menu:
+                clear_user_state("bedbug", from_number)
+                from helpers import send_template_message
+                send_template_message(
                     to=from_number,
-                    phone_number_id=os.getenv("PHONE_NUMBER_ID")
+                    template_name="main_menu_v2",
+                    template_params=["there"]
                 )
-                return
+                return Response(status=200)
 
-    # ─── D) User answered Yes/No to “add another area?” ─────────────────────────
-    if msg_type == "button" and step == "bedbug_waiting_area_add_confirmation":
-        payload = message.get("body", "").strip().lower()
-        if payload == "bedbug_confirm_yes":
-            # Ask for another area:
-            state["step"] = "bedbug_select_area"
-            set_user_state(BEDBUG_PREFIX, from_number, state)
-            send_bedbug_area_selection(
-                to=from_number,
-                phone_number_id=os.getenv("PHONE_NUMBER_ID")
-            )
-            return
-
-        if payload == "bedbug_confirm_no":
-            # Move to bedroom count:
-            _maybe_ask_bedroom_count(to=from_number, phone_number_id=os.getenv("PHONE_NUMBER_ID"))
-            return
-
-    # ─── E) User picked “Number of Bedrooms Affected” ───────────────────────────
-    if msg_type == "interactive" and step == "bedbug_waiting_bedroom_count":
-        bedroom_id = message.get("interactive", {}).get("list_reply", {}).get("id", "")
-        if bedroom_id:
-            # Store bedroom count:
-            count_map = {
-                "bedbug_count_1":  "1",
-                "bedbug_count_2":  "2",
-                "bedbug_count_3":  "3",
-                "bedbug_count_4":  "4",
-                "bedbug_count_5":  "5+"
-            }
-            state["bedbug_bedroom_count"] = count_map.get(bedroom_id, "Not provided")
-            state["step"] = "bedbug_waiting_confirmation"
-            set_user_state(BEDBUG_PREFIX, from_number, state)
-
-            # After bedrooms, ask for overall estimate (free-text):
+            # Fallback if they tapped something else:
             send_text_message({
                 "to": from_number,
                 "type": "text",
                 "messaging_product": "whatsapp",
-                "text": {
-                    "body": (
-                        "Thanks! Please estimate how many bedbugs (approx.) you see in total. "
-                        "For example: 10 – 20. You can type a range or a single number."
-                    )
-                }
+                "text": {"body": "Please enter 1, 2, or 3."}
             })
-            return
+            return Response(status=200)
 
-    # ─── F) User provided “overall bedbug count estimate” ────────────────────────
-    if msg_type == "text" and step == "bedbug_waiting_confirmation":
-        # Save the textual count estimate:
-        estimate_text = message.get("body", "").strip()
-        state["bedbug_count"] = estimate_text
-        state["step"] = "bedbug_confirm_summary"
-        set_user_state(BEDBUG_PREFIX, from_number, state)
+        # 3) If we are waiting for “Yes/No” to add another area:
+        if step == "bedbug_waiting_add_area_confirmation":
+            if payload in ["yes", "y"]:
+                state["step"] = "bedbug_select_area"
+                set_user_state("bedbug", from_number, state)
+                return send_bedbug_area_selection(to=from_number)
 
-        # Show summary & confirmation (Yes/No):
-        send_bedbug_summary(to=from_number, phone_number_id=os.getenv("PHONE_NUMBER_ID"))
-        return
+            if payload in ["no", "n"]:
+                # Summarize and confirm booking:
+                summary = "Bedbug Removal Summary:\n\n"
+                for idx, area in enumerate(state.get("affected_areas", []), start=1):
+                    summary += f"{idx}.) {area}\n"
+                summary += (
+                    "\nType 'Confirm' to book now, or 'Return' to go back to the main menu."
+                )
+                send_text_message({
+                    "to": from_number,
+                    "type": "text",
+                    "messaging_product": "whatsapp",
+                    "text": {"body": summary}
+                })
+                state["step"] = "bedbug_waiting_confirmation"
+                set_user_state("bedbug", from_number, state)
+                return Response(status=200)
 
-    # ─── G) User confirmed the summary (Yes/No) ──────────────────────────────────
-    if msg_type == "button" and step == "bedbug_confirm_summary":
-        payload = message.get("body", "").strip().lower()
-        if payload == "bedbug_confirm_yes":
-            # Finalize appointment request. Clear state and send a thank-you message.
-            data = state
-            areas         = data.get("affected_areas", [])
-            bedroom_count = data.get("bedbug_bedroom_count", "")
-            overall_count = data.get("bedbug_count", "")
-
-            clear_user_state(BEDBUG_PREFIX, from_number)
-            confirmation = (
-                "Thank you! Your bedbug request has been received.\n\n"
-                f"Affected Areas: {', '.join(areas)}\n"
-                f"Bedrooms Affected: {bedroom_count}\n"
-                f"Bedbug Count Estimate: {overall_count}\n\n"
-                "Our agent will contact you shortly. Meanwhile, you can view our Bedbug FAQ again:"
-            )
+            # If invalid:
             send_text_message({
                 "to": from_number,
                 "type": "text",
                 "messaging_product": "whatsapp",
-                "text": { "body": confirmation }
+                "text": {"body": "Please reply Yes or No."}
             })
-            # Optionally re-show the FAQ
-            send_bedbug_faq_list(to=from_number, phone_number_id=os.getenv("PHONE_NUMBER_ID"))
-            return
+            return Response(status=200)
 
-        if payload == "bedbug_confirm_no":
-            # If user rejects summary, restart from picking areas:
-            new_state = { "step": "bedbug_select_area", "affected_areas": [] }
-            set_user_state(BEDBUG_PREFIX, from_number, new_state)
-            send_bedbug_area_selection(to=from_number, phone_number_id=os.getenv("PHONE_NUMBER_ID"))
-            return
+        # 4) If they are on “bedbug_waiting_confirmation”:
+        if step == "bedbug_waiting_confirmation":
+            if payload == "confirm":
+                send_text_message({
+                    "to": from_number,
+                    "type": "text",
+                    "messaging_product": "whatsapp",
+                    "text": {"body": "Thanks—Your booking request has been sent to our agent. You’ll hear from us soon."}
+                })
+                clear_user_state("bedbug", from_number)
+                return Response(status=200)
 
-    # ─── H) User picked a FAQ row (interactive list) ───────────────────────────
-    if msg_type == "interactive" and step == "bedbug_faq":
-        faq_id = message.get("interactive", {}).get("list_reply", {}).get("id", "")
-        if faq_id:
-            process_bedbug_faq_response(to=from_number, faq_id=faq_id)
-            return
+            if payload == "return":
+                clear_user_state("bedbug", from_number)
+                from helpers import send_template_message
+                send_template_message(
+                    to=from_number,
+                    template_name="main_menu_v2",
+                    template_params=["there"]
+                )
+                return Response(status=200)
 
-    # ─── I) FALLBACK: nothing matched ────────────────────────────────────────────
-    clear_user_state(BEDBUG_PREFIX, from_number)
-    send_text_message({
-        "to": from_number,
-        "type": "text",
-        "messaging_product": "whatsapp",
-        "text": { "body": "Sorry, I can’t handle that type of message. Type 'reset' to start over." }
-    })
+            # Fallback:
+            send_text_message({
+                "to": from_number,
+                "type": "text",
+                "messaging_product": "whatsapp",
+                "text": {"body": "Please type 'Confirm' or 'Return'."}
+            })
+            return Response(status=200)
+
+    # ── C) FALLBACK if we get here, no matching step or type:
+    clear_user_state("bedbug", from_number)
+    from helpers import send_template_message
+    send_template_message(
+        to=from_number,
+        template_name="main_menu_v2",
+        template_params=["there"]
+    )
+    return Response(status=200)

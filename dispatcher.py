@@ -79,7 +79,7 @@ def webhook():
             resp = send_template_message(
                 to=chat_id,
                 template_name=MAIN_MENU_TEMPLATE,
-                template_params=[""]  # your main_menu_v2 expects 1 placeholder
+                template_params=["there"]  # your main_menu_v2 expects 1 placeholder
             )
             print("✅ send_template_message returned:", resp)
         except Exception as e:

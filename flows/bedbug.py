@@ -12,23 +12,23 @@ from helpers import (
 )
 
 # ─── Constants & Static Data ─────────────────────────────────────────────────
-BEDBUG_PREFIX = "bedbug"   # Redis key prefix for Bedbug flow
+BEDBUG_PREFIX = "bedbug"
 
 # Pre-defined area options for Bedbug quoting:
 BEDBUG_AREAS = [
     { "id": "bedbug_area_bed",       "title": "Bedroom(s)",        "description": "Where you sleep" },
     { "id": "bedbug_area_living",    "title": "Living Area",       "description": "Living room, sofas, etc." },
     { "id": "bedbug_area_whole",     "title": "Whole Unit",        "description": "Entire house/apartment" },
-    { "id": "bedbug_area_commercial", "title": "Commercial Space", "description": "Office / Retail / Other" }
+    { "id": "bedbug_area_commercial","title": "Commercial Space",  "description": "Office / Retail / Other" }
 ]
 
 # Pre-set bedroom-count options:
 BEDROOM_COUNT_ROWS = [
-    { "id": "bedbug_count_1", "title": "1",  "description": "" },
-    { "id": "bedbug_count_2", "title": "2",  "description": "" },
-    { "id": "bedbug_count_3", "title": "3",  "description": "" },
-    { "id": "bedbug_count_4", "title": "4",  "description": "" },
-    { "id": "bedbug_count_5", "title": "5+", "description": "5 or more bedrooms" }
+    { "id": "bedbug_count_1", "title": "1",   "description": "" },
+    { "id": "bedbug_count_2", "title": "2",   "description": "" },
+    { "id": "bedbug_count_3", "title": "3",   "description": "" },
+    { "id": "bedbug_count_4", "title": "4",   "description": "" },
+    { "id": "bedbug_count_5", "title": "5+",  "description": "5 or more bedrooms" }
 ]
 
 
@@ -45,22 +45,20 @@ def send_bedbug_option_prompt(to: str, phone_number_id: str):
         "Please select an option below for us to better understand what you are looking for."
     )
 
-    # Build a “button”‐type interactive payload:
     interactive_payload = {
         "type": "button",
         "body": { "text": text },
         "action": {
             "buttons": [
-                { "type": "reply", "reply": { "id": "bedbug_quote",      "title": "Request a Quotation"   } },
-                { "type": "reply", "reply": { "id": "bedbug_more_info",   "title": "More Info on Service"  } },
+                { "type": "reply", "reply": { "id": "bedbug_quote",      "title": "Request a Quotation" } },
+                { "type": "reply", "reply": { "id": "bedbug_more_info",   "title": "More Info on Service" } },
                 { "type": "reply", "reply": { "id": "bedbug_return_main", "title": "Return to Main Menu" } }
             ]
         }
     }
 
-    # Instead of send_interactive_message(...), wrap it with send_text_message(...)
     resp = send_text_message({
-        "to": to,                               # “to” must be plain digits (e.g. "6587788080")
+        "to": to,  # plain digits (no @c.us)
         "type": "interactive",
         "messaging_product": "whatsapp",
         "interactive": interactive_payload
@@ -83,7 +81,6 @@ def send_bedbug_area_selection(to: str, phone_number_id: str):
         _maybe_ask_bedroom_count(to, phone_number_id)
         return
 
-    # Build “rows” for the list payload:
     rows = [
         { "id": item["id"], "title": item["title"], "description": item["description"] }
         for item in available
@@ -102,9 +99,8 @@ def send_bedbug_area_selection(to: str, phone_number_id: str):
         }
     }
 
-    # Wrap list payload in send_text_message:
     resp = send_text_message({
-        "to": to,
+        "to": to,  # plain digits
         "type": "interactive",
         "messaging_product": "whatsapp",
         "interactive": interactive_payload
@@ -125,7 +121,6 @@ def _maybe_ask_bedroom_count(to: str, phone_number_id: str):
     state["step"] = "bedbug_waiting_bedroom_count"
     set_user_state(BEDBUG_PREFIX, to, state)
 
-    # Build a “list” payload of bedroom counts:
     interactive_payload = {
         "type": "list",
         "header": { "type": "text", "text": "Number of Bedrooms Affected" },
@@ -148,17 +143,7 @@ def _maybe_ask_bedroom_count(to: str, phone_number_id: str):
     print(f"[DEBUG] _maybe_ask_bedroom_count → {resp}")
 
 
-# ─── 4) send_bedbug_bedroom_count_prompt ─────────────────────────────────────────
-def send_bedbug_bedroom_count_prompt(to: str, phone_number_id: str):
-    """
-    (If you want to force‐prompt for bedroom count directly, but our code
-     calls _maybe_ask_bedroom_count above, so this may never actually fire.)
-    """
-    # In practice, we rarely call this directly—_maybe_ask_bedroom_count handles it.
-    _maybe_ask_bedroom_count(to, phone_number_id)
-
-
-# ─── 5) send_bedbug_area_add_confirmation_prompt ─────────────────────────────────
+# ─── 4) send_bedbug_area_add_confirmation_prompt ─────────────────────────────────
 def send_bedbug_area_add_confirmation_prompt(to: str, phone_number_id: str):
     """
     After the user picks 1 area (or more), this asks “Would you like to add another area?”
@@ -190,7 +175,7 @@ def send_bedbug_area_add_confirmation_prompt(to: str, phone_number_id: str):
     set_user_state(BEDBUG_PREFIX, to, state)
 
 
-# ─── 6) send_bedbug_summary ─────────────────────────────────────────────────────
+# ─── 5) send_bedbug_summary ─────────────────────────────────────────────────────
 def send_bedbug_summary(to: str, phone_number_id: str):
     """
     Summarizes all collected bedbug details and asks for final confirmation.
@@ -238,14 +223,14 @@ def send_bedbug_summary(to: str, phone_number_id: str):
     set_user_state(BEDBUG_PREFIX, to, state)
 
 
-# ─── 7) send_bedbug_faq_list ────────────────────────────────────────────────────
+# ─── 6) send_bedbug_faq_list ────────────────────────────────────────────────────
 def send_bedbug_faq_list(to: str, phone_number_id: str):
     """
     Sends an interactive list of Bedbug‐related FAQs.
     """
     faq_rows = [
         { "id": "bbfaq_safety",      "title": "Is it safe for kids & pets?",            "description": "" },
-        { "id": "bbfaq_service_info", "title": "What does service include?",            "description": "" },
+        { "id": "bbfaq_service_info","title": "What does service include?",            "description": "" },
         { "id": "bbfaq_preparation", "title": "How to prepare before service?",          "description": "" },
         { "id": "bbfaq_duration",    "title": "How long will it take?",                 "description": "" },
         { "id": "bbfaq_warranty",    "title": "Warranty / Guarantee details",           "description": "" },
@@ -278,7 +263,7 @@ def send_bedbug_faq_list(to: str, phone_number_id: str):
     set_user_state(BEDBUG_PREFIX, to, state)
 
 
-# ─── 8) process_bedbug_faq_response ─────────────────────────────────────────────
+# ─── 7) process_bedbug_faq_response ─────────────────────────────────────────────
 def process_bedbug_faq_response(to: str, faq_id: str):
     """
     Sends back the selected FAQ answer as a plain text message.
@@ -328,16 +313,16 @@ def process_bedbug_faq_response(to: str, faq_id: str):
     })
 
 
-# ─── 9) handle_bedbug_flow ──────────────────────────────────────────────────────
-def handle_bedbug_flow(from_number: str, message: dict, api_key: str, base_url: str):
+# ─── 8) handle_bedbug_flow ──────────────────────────────────────────────────────
+def handle_bedbug_flow(from_number: str, message: dict, user_state: dict):
     """
     Main Bedbug flow dispatcher. ‘from_number’ is the full WhatsApp ID (e.g. "6587788080@c.us").
     """
-    user_state = get_user_state(BEDBUG_PREFIX, from_number) or {}
-    step = user_state.get("step", "")
+    state = user_state or {}
+    step  = state.get("step", "")
     msg_type = message.get("type", "")
 
-    # ─── A) “Reset” or “Need help on Bedbugs!” from main menu ───────────────────────
+    # ─── A) “Reset” or “Need help on Bedbugs!” from main menu ───────────────────
     if msg_type == "text" and message.get("body", "").strip().lower() == "reset":
         clear_user_state(BEDBUG_PREFIX, from_number)
         send_bedbug_option_prompt(to=from_number, phone_number_id=os.getenv("PHONE_NUMBER_ID"))
@@ -360,8 +345,8 @@ def handle_bedbug_flow(from_number: str, message: dict, api_key: str, base_url: 
 
         if payload == "bedbug_more_info":
             # Show FAQ list
-            user_state["step"] = "bedbug_faq"
-            set_user_state(BEDBUG_PREFIX, from_number, user_state)
+            state["step"] = "bedbug_faq"
+            set_user_state(BEDBUG_PREFIX, from_number, state)
             send_bedbug_faq_list(to=from_number, phone_number_id=os.getenv("PHONE_NUMBER_ID"))
             return
 
@@ -375,9 +360,9 @@ def handle_bedbug_flow(from_number: str, message: dict, api_key: str, base_url: 
             )
             return
 
-    # ─── C) User picked an “Affected Area” from the list ───────────────────────────
+    # ─── C) User picked an “Affected Area” from the list ────────────────────────
     if msg_type == "interactive" and step == "bedbug_select_area":
-        choice_id = message.get("list_reply", {}).get("id", "")
+        choice_id = message.get("interactive", {}).get("list_reply", {}).get("id", "")
         if choice_id:
             area_map = {
                 "bedbug_area_bed":       "Bedroom(s)",
@@ -387,24 +372,22 @@ def handle_bedbug_flow(from_number: str, message: dict, api_key: str, base_url: 
             }
             selected_area = area_map.get(choice_id, "")
             if selected_area:
-                state = user_state
                 state.setdefault("affected_areas", []).append(selected_area)
                 state["step"] = "bedbug_waiting_area_add_confirmation"
                 set_user_state(BEDBUG_PREFIX, from_number, state)
 
-                # Ask "Would you like to add another area?" 
+                # Ask "Would you like to add another area?"
                 send_bedbug_area_add_confirmation_prompt(
                     to=from_number,
                     phone_number_id=os.getenv("PHONE_NUMBER_ID")
                 )
                 return
 
-    # ─── D) User answered Yes/No to “add another area?” ───────────────────────────
+    # ─── D) User answered Yes/No to “add another area?” ─────────────────────────
     if msg_type == "button" and step == "bedbug_waiting_area_add_confirmation":
         payload = message.get("body", "").strip().lower()
         if payload == "bedbug_confirm_yes":
             # Ask for another area:
-            state = user_state
             state["step"] = "bedbug_select_area"
             set_user_state(BEDBUG_PREFIX, from_number, state)
             send_bedbug_area_selection(
@@ -418,12 +401,11 @@ def handle_bedbug_flow(from_number: str, message: dict, api_key: str, base_url: 
             _maybe_ask_bedroom_count(to=from_number, phone_number_id=os.getenv("PHONE_NUMBER_ID"))
             return
 
-    # ─── E) User picked “Number of Bedrooms Affected” ─────────────────────────────
+    # ─── E) User picked “Number of Bedrooms Affected” ───────────────────────────
     if msg_type == "interactive" and step == "bedbug_waiting_bedroom_count":
-        bedroom_id = message.get("list_reply", {}).get("id", "")
+        bedroom_id = message.get("interactive", {}).get("list_reply", {}).get("id", "")
         if bedroom_id:
             # Store bedroom count:
-            state = user_state
             count_map = {
                 "bedbug_count_1":  "1",
                 "bedbug_count_2":  "2",
@@ -449,11 +431,10 @@ def handle_bedbug_flow(from_number: str, message: dict, api_key: str, base_url: 
             })
             return
 
-    # ─── F) User provided “overall bedbug count estimate” ─────────────────────────
+    # ─── F) User provided “overall bedbug count estimate” ────────────────────────
     if msg_type == "text" and step == "bedbug_waiting_confirmation":
         # Save the textual count estimate:
         estimate_text = message.get("body", "").strip()
-        state = user_state
         state["bedbug_count"] = estimate_text
         state["step"] = "bedbug_confirm_summary"
         set_user_state(BEDBUG_PREFIX, from_number, state)
@@ -462,12 +443,12 @@ def handle_bedbug_flow(from_number: str, message: dict, api_key: str, base_url: 
         send_bedbug_summary(to=from_number, phone_number_id=os.getenv("PHONE_NUMBER_ID"))
         return
 
-    # ─── G) User confirmed the summary (Yes/No) ────────────────────────────────────
+    # ─── G) User confirmed the summary (Yes/No) ──────────────────────────────────
     if msg_type == "button" and step == "bedbug_confirm_summary":
         payload = message.get("body", "").strip().lower()
         if payload == "bedbug_confirm_yes":
             # Finalize appointment request. Clear state and send a thank-you message.
-            data = user_state
+            data = state
             areas         = data.get("affected_areas", [])
             bedroom_count = data.get("bedbug_bedroom_count", "")
             overall_count = data.get("bedbug_count", "")
@@ -497,14 +478,14 @@ def handle_bedbug_flow(from_number: str, message: dict, api_key: str, base_url: 
             send_bedbug_area_selection(to=from_number, phone_number_id=os.getenv("PHONE_NUMBER_ID"))
             return
 
-    # ─── H) User picked a FAQ row (interactive list) ─────────────────────────────
+    # ─── H) User picked a FAQ row (interactive list) ───────────────────────────
     if msg_type == "interactive" and step == "bedbug_faq":
-        faq_id = message.get("list_reply", {}).get("id", "")
+        faq_id = message.get("interactive", {}).get("list_reply", {}).get("id", "")
         if faq_id:
             process_bedbug_faq_response(to=from_number, faq_id=faq_id)
             return
 
-    # ─── I) FALLBACK: nothing matched ─────────────────────────────────────────────
+    # ─── I) FALLBACK: nothing matched ────────────────────────────────────────────
     clear_user_state(BEDBUG_PREFIX, from_number)
     send_text_message({
         "to": from_number,

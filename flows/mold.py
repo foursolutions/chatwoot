@@ -6,11 +6,11 @@ from helpers import (
     get_user_state,
     set_user_state,
     clear_user_state,
-    send_text_message
+    send_text_message,
+    send_list_message
 )
 
 # ─── Constants & Static Data ─────────────────────────────────────────────────
-
 MOLD_PREFIX = "mold"
 
 MOLD_AREAS = [
@@ -26,12 +26,10 @@ MOLD_AREAS = [
     { "id": "area_others",     "title": "Other Areas",   "description": "Unlisted areas"           }
 ]
 
-
 # ─── 1) FAQ Section ──────────────────────────────────────────────────────────
 def send_mold_removal_faq(to: str, phone_number_id: str):
     """
-    Sends an interactive FAQ list for Mold Removal, using your updated questions
-    and descriptions.
+    Sends an interactive FAQ list for Mold Removal.
     """
     interactive_payload = {
         "type": "list",
@@ -66,7 +64,6 @@ def send_mold_removal_faq(to: str, phone_number_id: str):
 def process_mold_faq_response(to: str, faq_id: str):
     """
     After the user taps one of the FAQ rows, send back the corresponding answer.
-    Uses your updated answer text.
     """
     faq_answers = {
         "mfaq_safe": (
@@ -136,9 +133,9 @@ def send_mold_option_prompt(to: str, phone_number_id: str):
         "body": { "text": text },
         "action": {
             "buttons": [
-                { "type": "reply", "reply": { "id": "mold_get_quote",    "title": "Request a Quotation"   } },
-                { "type": "reply", "reply": { "id": "mold_more_info",     "title": "More Info on Service"  } },
-                { "type": "reply", "reply": { "id": "return_main_menu",  "title": "Return to Main Menu"   } }
+                { "type": "reply", "reply": { "id": "mold_get_quote",   "title": "Request a Quotation" } },
+                { "type": "reply", "reply": { "id": "mold_more_info",    "title": "More Info on Service" } },
+                { "type": "reply", "reply": { "id": "return_main_menu", "title": "Return to Main Menu" } }
             ]
         }
     }
@@ -190,7 +187,7 @@ def send_mold_area_selection(to: str, phone_number_id: str):
     })
     print(f"[DEBUG] send_mold_area_selection → {resp}")
 
-    # Mark in Redis that we’re awaiting a list reply for the area selection
+    # Mark that we’re awaiting a list reply for the area selection
     state["step"] = "mold_waiting_area_selection"
     set_user_state(MOLD_PREFIX, to, state)
 
@@ -394,7 +391,7 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
     """
     state = user_state or {}
     step  = state.get("step", "")
-    msg_type = message.get("type")  # "text", "button", or "interactive"
+    msg_type = message.get("type", "")  # "text", "button", or "interactive"
 
     def extract_button_payload(msg: dict) -> str:
         if msg.get("type") == "button":
@@ -409,6 +406,7 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
         if choice_id.startswith("mfaq_"):
             print(f"[DEBUG] handle_mold_flow: LIST payload='{choice_id}' from {from_number}")
             process_mold_faq_response(from_number, choice_id)
+            # Re‐render the FAQ menu after sending answer:
             send_mold_removal_faq(
                 to=from_number,
                 phone_number_id=os.getenv("PHONE_NUMBER_ID")
@@ -457,13 +455,14 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
 
                 if payload_lower == "return_main_menu":
                     clear_user_state(MOLD_PREFIX, from_number)
+                    # Send back to the same main‐menu template:
                     from flows.car_fumigation import send_main_menu
                     send_main_menu(
-                        to=from_number,
-                        phone_number_id=os.getenv("PHONE_NUMBER_ID")
+                        to=from_number.split("@")[0],
                     )
                     return
 
+                # Unrecognized button:
                 send_text_message({
                     "to": from_number,
                     "type": "text",
@@ -533,9 +532,11 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
 
         # A) Picking an affected area
         if step == "mold_waiting_area_selection":
+            # Save the human‐readable title in state["affected_areas"]
             state.setdefault("affected_areas", []).append(choice_title)
             set_user_state(MOLD_PREFIX, from_number, state)
 
+            # If they chose a “bedroom” area, ask for bedroom count:
             if choice_id.startswith("area_bedroom"):
                 state["step"] = "mold_waiting_bedroom_count"
                 set_user_state(MOLD_PREFIX, from_number, state)
@@ -545,6 +546,7 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
                 )
                 return
 
+            # If they chose a “bathroom” area, ask for bathroom count:
             if choice_id.startswith("area_bathroom"):
                 state["step"] = "mold_waiting_bathroom_count"
                 set_user_state(MOLD_PREFIX, from_number, state)
@@ -554,6 +556,7 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
                 )
                 return
 
+            # Otherwise, ask “add another area?”:
             state["step"] = "mold_waiting_add_area_confirmation"
             set_user_state(MOLD_PREFIX, from_number, state)
             send_add_area_confirmation_prompt(
@@ -568,6 +571,7 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
             state["bedroom_count"] = count
             set_user_state(MOLD_PREFIX, from_number, state)
 
+            # Go back to “add another area?”:
             state["step"] = "mold_waiting_add_area_confirmation"
             set_user_state(MOLD_PREFIX, from_number, state)
             send_add_area_confirmation_prompt(
@@ -582,6 +586,7 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
             state["bathroom_count"] = count
             set_user_state(MOLD_PREFIX, from_number, state)
 
+            # Go back to “add another area?”:
             state["step"] = "mold_waiting_add_area_confirmation"
             set_user_state(MOLD_PREFIX, from_number, state)
             send_add_area_confirmation_prompt(
@@ -595,6 +600,7 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
             state["growth_location"] = choice_id
             set_user_state(MOLD_PREFIX, from_number, state)
 
+            # Move to final summary/confirmation:
             state["step"] = "mold_waiting_confirmation"
             set_user_state(MOLD_PREFIX, from_number, state)
             send_mold_removal_summary(

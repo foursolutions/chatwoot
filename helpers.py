@@ -7,150 +7,150 @@ import requests
 # 1msg / WhatsApp configuration
 # ────────────────────────────────────────────────────────────────────────────────
 API_KEY_WA  = os.environ.get("WHATSAPP_TOKEN", "")   # e.g. "TKNgrBqpmnbDhf9NzyO5uXNgKHoblDCe"
-INSTANCE_ID = "VAN388218473"                          # your 1msg instance ID
+INSTANCE_ID = "VAN388218473"                         # your 1msg instance ID
 
 # ────────────────────────────────────────────────────────────────────────────────
-# send_text_message: Sends a plain text message via 1msg’s /send endpoint
+# send_text_message: Sends a plain text message (or an “interactive” payload) via 1msg’s /send endpoint
 # ────────────────────────────────────────────────────────────────────────────────
 def send_text_message(message_payload: dict) -> dict:
     """
-    message_payload should include:
-    {
-      "to": "<plain_phone>",         # e.g. "6587788080"
-      "type": "text",
-      "messaging_product": "whatsapp",
-      "text": { "body": "Hello!" }
-    }
+    message_payload should be a dict containing exactly the JSON you would have
+    sent to https://api.1msg.io/{INSTANCE_ID}/send.
+
+    For example, for a button‐style interactive or list, you’d construct `message_payload`
+    exactly as WhatsApp expects:
+      {
+        "to": "6587788080",               # plain digits (no “@c.us”)
+        "type": "interactive",
+        "messaging_product": "whatsapp",
+        "interactive": { … }
+      }
+    or for a simple text:
+      {
+        "to": "6587788080",
+        "type": "text",
+        "messaging_product": "whatsapp",
+        "text": { "body": "Hello!" }
+      }
+
+    Returns the 1msg API’s JSON response (as a Python dict).
     """
     url = f"https://api.1msg.io/{INSTANCE_ID}/send"
-    headers = {"Content-Type": "application/json"}
+    headers = {
+        "Content-Type": "application/json",
+        "token": API_KEY_WA
+    }
     resp = requests.post(url, json=message_payload, headers=headers)
     try:
         return resp.json()
-    except ValueError:
-        return { "error": "non-json response", "status_code": resp.status_code }
+    except:
+        return { "error": f"HTTP {resp.status_code}", "text": resp.text }
 
 
 # ────────────────────────────────────────────────────────────────────────────────
-# send_template_message: Sends a pre-approved WhatsApp Template via 1msg’s /sendTemplate
+# send_template_message: Sends a pre‐approved template via 1msg’s /sendTemplate endpoint
 # ────────────────────────────────────────────────────────────────────────────────
 def send_template_message(to: str, template_name: str, template_params: list) -> dict:
     """
-    to: the chatId phone number **without “@c.us”**, e.g. "6587788080"
-    template_name: name of your approved template (e.g. "main_menu_v2")
-    template_params: list of strings for body‐placeholders
+    to:            The recipient’s phone number (plain digits, e.g. "6587788080").
+    template_name: The exact name of the template (e.g. "main_menu_v2").
+    template_params: A list of strings corresponding to all the “{{1}},” “{{2}},” etc.
+                     placeholders in your template. Example: ["Alice", "10:00AM"].
+
+    Returns the 1msg API’s JSON response (as a Python dict).
     """
     url = f"https://api.1msg.io/{INSTANCE_ID}/sendTemplate"
-    headers = { "Content-Type": "application/json" }
-
-    params_array = []
-    for p in template_params:
-        params_array.append({
-            "type": "body",
-            "parameters": [
-                { "type": "text", "text": p }
-            ]
-        })
-
+    headers = {
+        "Content-Type": "application/json",
+        "token": API_KEY_WA
+    }
     payload = {
-        "token": API_KEY_WA,
-        # If you use a namespace in WhatsApp for templates, set it here.
-        # If you do not use a namespace, leave this as an empty string or omit the field entirely.
         "namespace": os.environ.get("WHATSAPP_NAMESPACE", ""),
         "template": template_name,
-        "language": { "policy": "deterministic", "code": "en" },
-        "params": params_array,
-        "phone": to   # <— 1msg expects the phone number as plain digits (no “@c.us”)
-    }
-
-    resp = requests.post(url, json=payload, headers=headers)
-    try:
-        return resp.json()
-    except ValueError:
-        return { "error": "non-json response", "status_code": resp.status_code }
-
-
-# ────────────────────────────────────────────────────────────────────────────────
-# send_list_message: Sends a WhatsApp "interactive list" via 1msg’s /sendList endpoint
-# ────────────────────────────────────────────────────────────────────────────────
-def send_list_message(to_chat_id: str) -> dict:
-    """
-    to_chat_id must be the full WhatsApp ID, e.g. "6587788080@c.us".
-    Returns whichever JSON 1msg sends back.
-    """
-    url = f"https://api.1msg.io/{INSTANCE_ID}/sendList"
-    headers = { "Content-Type": "application/json" }
-
-    payload = {
-        "token": API_KEY_WA,
-        # The “body” text that appears above the rows of your list:
-        "body":   "Please select the pest control service you need assistance with:\n",
-        # The “header” text at the top:
-        "header": "Pest Control Services",
-        # The “footer” text at the bottom:
-        "footer": "Tap to choose",
-        # The button label that opens the list:
-        "action": "Select Service",
-        # Exactly one “section,” called “Common Pest Issues,” with each row defined:
-        "sections": [
+        "language": {
+            "policy": "deterministic",
+            "code": "en"
+        },
+        "params": [
             {
-                "title": "Common Pest Issues",
-                "rows": [
-                    {
-                        "id": "car_fumigation",
-                        "title": "Car Fumigation 🚗",
-                        "description": "On-site fumigation & fogging"
-                    },
-                    {
-                        "id": "bedbugs",
-                        "title": "Bed Bugs 🛏️",
-                        "description": "Elimination of bed bugs"
-                    },
-                    {
-                        "id": "booklice",
-                        "title": "Booklice 📚",
-                        "description": "Treatment for booklice"
-                    },
-                    {
-                        "id": "roaches_ants",
-                        "title": "Roaches & Ants 🐜",
-                        "description": "General pest control"
-                    },
-                    {
-                        "id": "bees_wasps",
-                        "title": "Bees/Wasps 🐝",
-                        "description": "Removal of nests"
-                    },
-                    {
-                        "id": "commercial_pest",
-                        "title": "Commercial Pest 🏢",
-                        "description": "Services for offices"
-                    },
-                    {
-                        "id": "other_pest_issues",
-                        "title": "Other Pest Issues 🕷️",
-                        "description": "Other pest problems"
-                    }
+                "type": "body",
+                "parameters": [
+                    { "type": "text", "text": param }
+                    for param in template_params
                 ]
             }
         ],
-        # “chatId” must be the full WhatsApp ID (with “@c.us”)
-        "chatId": to_chat_id
+        "phone": to
     }
-
     resp = requests.post(url, json=payload, headers=headers)
     try:
         return resp.json()
-    except ValueError:
-        return { "error": "non-json response", "status_code": resp.status_code }
+    except:
+        return { "error": f"HTTP {resp.status_code}", "text": resp.text }
 
 
 # ────────────────────────────────────────────────────────────────────────────────
-# In‐memory state management for each flow (“car,” “bedbug,” “mold”)
+# send_list_message: Sends a pre‐approved interactive list using 1msg’s /sendList endpoint
 # ────────────────────────────────────────────────────────────────────────────────
-_user_states: dict = {
-    "car": {},
+def send_list_message(to_chat_id: str) -> dict:
+    """
+    to_chat_id: full WhatsApp ID (e.g. "6587788080@c.us").
+    This helper builds and sends the exact JSON that matches your “pest_control_list”,
+    “car_fumigation” list, etc., which have already been pre-approved in 1msg.
+    You only need to supply the “to” parameter; the rest of the JSON is baked in.
+
+    Returns the 1msg API’s JSON response (as a Python dict).
+    """
+    plain_phone = to_chat_id.split("@")[0]
+    # Example: we know that “pest_control_list” is a pre-approved list template in 1msg.
+    # In your account, make sure the name exactly matches “pest_control_list”.
+    url = f"https://api.1msg.io/{INSTANCE_ID}/sendList"
+    headers = {
+        "Content-Type": "application/json",
+        "token": API_KEY_WA
+    }
+    payload = {
+        "to": plain_phone,
+        "type": "interactive",
+        "messaging_product": "whatsapp",
+        "interactive": {
+            "type": "list",
+            "header": { "type": "text", "text": "Select Pest Control Service" },
+            "body":   { "text": "Please select the pest control service you need assistance with:" },
+            "footer": { "text": "Tap an option" },
+            "action": {
+                "button": "Select Service",
+                "sections": [
+                    {
+                        "title": "Pest Control Services",
+                        "rows": [
+                            { "id": "rodents",         "title": "Rodent Control",        "description": "Mice, rats, etc." },
+                            { "id": "ants",            "title": "Ant Control",           "description": "Kitchen ants, etc." },
+                            { "id": "cockroaches",     "title": "Cockroach Control",     "description": "Kitchen/bath roaches" },
+                            { "id": "bedbug",          "title": "Bedbug Services",       "description": "Home & commercial" },
+                            { "id": "termite",         "title": "Termite Services",      "description": "Treatment & prevention" },
+                            { "id": "car_fumigation",  "title": "Car Fumigation",        "description": "On-site fumigation" },
+                            { "id": "mold",            "title": "Mold Remediation",      "description": "Anti-mold painting" }
+                        ]
+                    }
+                ]
+            }
+        },
+        "chatId": to_chat_id
+    }
+    resp = requests.post(url, json=payload, headers=headers)
+    try:
+        return resp.json()
+    except:
+        return { "error": f"HTTP {resp.status_code}", "text": resp.text }
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+# Simple in-memory state storage (Redis or any DB would be better in production)
+# ────────────────────────────────────────────────────────────────────────────────
+_user_states = { 
     "bedbug": {},
+    "car": {},
     "mold": {}
 }
 

@@ -66,8 +66,6 @@ def send_vehicle_type_list(chat_id: str):
     """
     chat_id: full WhatsApp ID, e.g. "6587788080@c.us".
     Sends a free-form interactive list of vehicle types via 1msg’s /send endpoint.
-    (If you have a pre-approved “Select Vehicle Type” list‐template, replace this
-     with send_template_message(...) accordingly.)
     """
     payload = {
         "to": chat_id,
@@ -435,6 +433,7 @@ def process_car_fumigation_faq_response(chat_id: str, faq_id: str):
     send_text_message({
         "to": chat_id.split("@")[0],  # plain digits
         "type": "text",
+        "messaging_product": "whatsapp",
         "text": { "body": answer_text }
     })
 
@@ -450,34 +449,35 @@ def handle_car_fumigation_flow(to_chat_id: str, message: dict, api_key: str, bas
     state = get_user_state("car", to_chat_id) or {}
     msg_type = message.get("type", "")
 
-    # ────────────────────────────────────────────────────────────────────────────
-    # Step 1: User tapped “Need help on Pest!”
-    # ────────────────────────────────────────────────────────────────────────────
-    if msg_type == "button" and message.get("body", "").strip().lower() == "need help on pest!" and not state:
+    # ─────────────────────────────────────────────────────────────────────────██
+    # Step 1: User tapped “Need help on Pest!” (button)
+    # ─────────────────────────────────────────────────────────────────────────██
+    if (msg_type == "button"
+        and message.get("body", "").strip().lower() == "need help on pest!"
+        and not state):
         state["step"] = "pest_control_list"
         set_user_state("car", to_chat_id, state)
 
         send_pest_control_list(to_chat_id)
         return Response(status=200)
 
-    # ────────────────────────────────────────────────────────────────────────────
+    # ─────────────────────────────────────────────────────────────────────────██
     # Step 2: User selected “car_fumigation” from the Pest Control list
-    # ────────────────────────────────────────────────────────────────────────────
-    if (
-        msg_type == "interactive"
+    # ─────────────────────────────────────────────────────────────────────────██
+    if (msg_type == "interactive"
         and message.get("list_reply", {}).get("id") == "car_fumigation"
-        and state.get("step") == "pest_control_list"
-    ):
+        and state.get("step") == "pest_control_list"):
         state["step"] = "car_fum_menu"
         set_user_state("car", to_chat_id, state)
 
         send_car_fum_menu(to_chat_id)
         return Response(status=200)
 
-    # ────────────────────────────────────────────────────────────────────────────
+    # ─────────────────────────────────────────────────────────────────────────██
     # Step 3: In car_fum_menu, user taps “Book Now” / “More Info on Service” / “Return to Main Menu”
-    # ────────────────────────────────────────────────────────────────────────────
-    if msg_type == "button" and state.get("step") == "car_fum_menu":
+    # ─────────────────────────────────────────────────────────────────────────██
+    if (msg_type == "button"
+        and state.get("step") == "car_fum_menu"):
         payload_text = message.get("body", "").strip().lower()
 
         if payload_text == "book appointment":
@@ -500,18 +500,20 @@ def handle_car_fumigation_flow(to_chat_id: str, message: dict, api_key: str, bas
             send_main_menu(to_chat_id.split("@")[0])
             return Response(status=200)
 
-    # ────────────────────────────────────────────────────────────────────────────
-    # Step 4: User selected a FAQ row (in the "fumigation_faq" step)
-    # ────────────────────────────────────────────────────────────────────────────
-    if msg_type == "interactive" and state.get("step") == "fumigation_faq":
+    # ─────────────────────────────────────────────────────────────────────────██
+    # Step 4: User selected a FAQ row (in the “fumigation_faq” step)
+    # ─────────────────────────────────────────────────────────────────────────██
+    if (msg_type == "interactive"
+        and state.get("step") == "fumigation_faq"):
         faq_id = message.get("list_reply", {}).get("id")
         process_car_fumigation_faq_response(to_chat_id, faq_id)
         return Response(status=200)
 
-    # ────────────────────────────────────────────────────────────────────────────
+    # ─────────────────────────────────────────────────────────────────────────██
     # Step 5: User selected “Book Now” → now selecting pest type again
-    # ────────────────────────────────────────────────────────────────────────────
-    if msg_type == "interactive" and state.get("step") == "select_pest_type":
+    # ─────────────────────────────────────────────────────────────────────────██
+    if (msg_type == "interactive"
+        and state.get("step") == "select_pest_type"):
         pest_choice = message.get("list_reply", {}).get("id")
         state["pest_type"] = pest_choice
 
@@ -523,10 +525,11 @@ def handle_car_fumigation_flow(to_chat_id: str, message: dict, api_key: str, bas
         send_vehicle_type_list(to_chat_id)
         return Response(status=200)
 
-    # ────────────────────────────────────────────────────────────────────────────
+    # ─────────────────────────────────────────────────────────────────────────██
     # Step 6: User selected a vehicle type from the “Select Vehicle Type” list
-    # ────────────────────────────────────────────────────────────────────────────
-    if msg_type == "interactive" and state.get("step") == "select_vehicle_type":
+    # ─────────────────────────────────────────────────────────────────────────██
+    if (msg_type == "interactive"
+        and state.get("step") == "select_vehicle_type"):
         vehicle_choice = message.get("list_reply", {}).get("id")
         state["vehicle"] = vehicle_choice
 
@@ -547,10 +550,11 @@ def handle_car_fumigation_flow(to_chat_id: str, message: dict, api_key: str, bas
         send_cfadditionalfee_prompt(to_chat_id)
         return Response(status=200)
 
-    # ────────────────────────────────────────────────────────────────────────────
+    # ─────────────────────────────────────────────────────────────────────────██
     # Step 7: User answered “Yes” / “No” to “Additional Care Fee” (buttons)
-    # ────────────────────────────────────────────────────────────────────────────
-    if msg_type == "button" and state.get("step") == "ask_luxury_brand":
+    # ─────────────────────────────────────────────────────────────────────────██
+    if (msg_type == "button"
+        and state.get("step") == "ask_luxury_brand"):
         payload_id = message.get("body", "").strip().lower()
         if payload_id == "yes":
             state["continental"] = "luxury_yes"
@@ -562,10 +566,11 @@ def handle_car_fumigation_flow(to_chat_id: str, message: dict, api_key: str, bas
         send_upcoming_dates_list(to_chat_id)
         return Response(status=200)
 
-    # ────────────────────────────────────────────────────────────────────────────
+    # ─────────────────────────────────────────────────────────────────────────██
     # Step 8: User selected a date from the “Upcoming Dates” list
-    # ────────────────────────────────────────────────────────────────────────────
-    if msg_type == "interactive" and state.get("step") == "select_date":
+    # ─────────────────────────────────────────────────────────────────────────██
+    if (msg_type == "interactive"
+        and state.get("step") == "select_date"):
         date_id = message.get("list_reply", {}).get("id")
 
         if date_id == "other_dates":
@@ -588,10 +593,11 @@ def handle_car_fumigation_flow(to_chat_id: str, message: dict, api_key: str, bas
             send_time_selection_prompt(to_chat_id, chosen_date)
             return Response(status=200)
 
-    # ────────────────────────────────────────────────────────────────────────────
+    # ─────────────────────────────────────────────────────────────────────────██
     # Step 9: User manually typed a date (step="await_manual_date")
-    # ────────────────────────────────────────────────────────────────────────────
-    if msg_type == "text" and state.get("step") == "await_manual_date":
+    # ─────────────────────────────────────────────────────────────────────────██
+    if (msg_type == "text"
+        and state.get("step") == "await_manual_date"):
         user_date = message["body"].strip()
         try:
             datetime.strptime(user_date, "%d-%m-%Y")
@@ -609,10 +615,11 @@ def handle_car_fumigation_flow(to_chat_id: str, message: dict, api_key: str, bas
             })
         return Response(status=200)
 
-    # ────────────────────────────────────────────────────────────────────────────
+    # ─────────────────────────────────────────────────────────────────────────██
     # Step 10: User tapped a “Morning/Afternoon/Evening” button (step="select_time")
-    # ────────────────────────────────────────────────────────────────────────────
-    if msg_type == "button" and state.get("step") == "select_time":
+    # ─────────────────────────────────────────────────────────────────────────██
+    if (msg_type == "button"
+        and state.get("step") == "select_time"):
         payload_id = message.get("body", "").strip().lower()
         if payload_id == "time morning":
             chosen_time = "10:00 - 12:00"
@@ -641,10 +648,11 @@ def handle_car_fumigation_flow(to_chat_id: str, message: dict, api_key: str, bas
         })
         return Response(status=200)
 
-    # ────────────────────────────────────────────────────────────────────────────
+    # ─────────────────────────────────────────────────────────────────────────██
     # Step 11: User replies “Vehicle Model, Vehicle Number, On-site Location”
-    # ────────────────────────────────────────────────────────────────────────────
-    if msg_type == "text" and state.get("step") == "collect_final_details":
+    # ─────────────────────────────────────────────────────────────────────────██
+    if (msg_type == "text"
+        and state.get("step") == "collect_final_details"):
         parts = [p.strip() for p in message["body"].split(",")]
         if len(parts) != 3:
             send_text_message({
@@ -699,9 +707,9 @@ def handle_car_fumigation_flow(to_chat_id: str, message: dict, api_key: str, bas
         send_car_fumigation_faq(to_chat_id)
         return Response(status=200)
 
-    # ────────────────────────────────────────────────────────────────────────────
+    # ─────────────────────────────────────────────────────────────────────────██
     # Fallback: no step matched → clear state & send main menu again
-    # ────────────────────────────────────────────────────────────────────────────
+    # ─────────────────────────────────────────────────────────────────────────██
     clear_user_state("car", to_chat_id)
     send_main_menu(to_chat_id.split("@")[0])
     return Response(status=200)

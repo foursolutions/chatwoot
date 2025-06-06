@@ -7,103 +7,126 @@ import json
 # Configuration
 # ============
 WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
-REDIS_URL = os.getenv("REDIS_URL")
+REDIS_URL      = os.getenv("REDIS_URL")
 
-# Initialize Redis client
+# Initialize Redis client (shared by all dynos)
 r = redis.StrictRedis.from_url(REDIS_URL, decode_responses=True)
 
-# ===========================
-# Redis‐based State Functions
-# ===========================
-def get_user_state(prefix: str, user_id: str) -> dict:
-    key = f"{prefix}:{user_id}"
+
+def get_user_state(prefix: str, user_number: str) -> dict:
+    """
+    Retrieve a user’s state (stored as JSON) from Redis.
+    Returns {} if no state exists.
+    """
+    key = f"{prefix}:{user_number}"
     raw = r.get(key)
-    return json.loads(raw) if raw else {}
+    if raw:
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
+    return {}
 
-def set_user_state(prefix: str, user_id: str, state: dict):
-    key = f"{prefix}:{user_id}"
-    r.set(key, json.dumps(state), ex=3600)
 
-def clear_user_state(prefix: str, user_id: str):
-    key = f"{prefix}:{user_id}"
+def set_user_state(prefix: str, user_number: str, state: dict, expire: int = 3600) -> None:
+    """
+    Save a user’s state (as JSON) in Redis with a TTL (default 1 hour).
+    """
+    key = f"{prefix}:{user_number}"
+    serialized = json.dumps(state)
+    r.set(key, serialized, ex=expire)
+
+
+def clear_user_state(prefix: str, user_number: str) -> None:
+    """
+    Delete a user’s state from Redis.
+    """
+    key = f"{prefix}:{user_number}"
     r.delete(key)
 
 
-# ===================================
-# 360dialog V2 HTTP‐Request Functions
-# ===================================
-def send_template_message(to: str, template_name: str, template_params=None):
+def send_template_message(to: str, template_name: str, template_params: list) -> dict:
     """
-    Sends a WhatsApp template message via 360dialog V2.
-    - to: recipient phone number (e.g., "6591234567")
-    - template_name: exact name of the approved template in 360dialog
-    - template_params: list of strings to fill {{1}}, {{2}}, ... in the template body
+    Send a template message via 360dialog V2 API.
+    - `to`: recipient’s phone number as digits only (no “+”).
+    - `template_name`: exact approved template name in 360dialog.
+    - `template_params`: list of strings, one per placeholder in the template body.
     """
-    if template_params is None:
-        template_params = []
-
     url = "https://waba-v2.360dialog.io/messages"
     headers = {
         "D360-API-KEY": WHATSAPP_TOKEN,
         "Content-Type": "application/json"
     }
-
-    # Build parameters array for the "body" component
-    body_parameters = [{"type": "text", "text": param} for param in template_params]
-
     payload = {
         "to": to,
         "type": "template",
+        "messaging_product": "whatsapp",
         "template": {
             "name": template_name,
-            "language": { "code": "en" },   # <-- Use "en" (not "en_US")
+            "language": {
+                "code": "en_US",
+                "policy": "deterministic"
+            },
             "components": [
                 {
-                    "type": "body",
-                    "parameters": body_parameters
+                    "type": "BODY",
+                    "parameters": [{"type": "text", "text": p} for p in template_params]
                 }
             ]
-        },
-        "messaging_product": "whatsapp"
+        }
     }
 
-    resp = requests.post(url, headers=headers, json=payload)
-    return resp.json()
+    try:
+        resp = requests.post(url, headers=headers, json=payload)
+        # Log full status and body for troubleshooting
+        print(f"[DEBUG] send_template_message → status={resp.status_code} body={resp.text}")
+        return resp.json()
+    except Exception as e:
+        print(f"[ERROR] send_template_message exception: {e}")
+        return {"error": str(e)}
 
 
-def send_interactive_message(payload: dict):
+def send_interactive_message(payload: dict) -> dict:
     """
-    Sends a “session‐based” interactive message (list or quick‐reply) via 360dialog V2.
-    Must include "messaging_product": "whatsapp" at the top level of payload.
+    Send any interactive (list or button) message.
+    Expects a fully formed “payload” dict already including:
+      - to, type="interactive", messaging_product="whatsapp", interactive:{…}
     """
     url = "https://waba-v2.360dialog.io/messages"
     headers = {
         "D360-API-KEY": WHATSAPP_TOKEN,
         "Content-Type": "application/json"
     }
+    try:
+        resp = requests.post(url, headers=headers, json=payload)
+        print(f"[DEBUG] send_interactive_message → status={resp.status_code} body={resp.text}")
+        return resp.json()
+    except Exception as e:
+        print(f"[ERROR] send_interactive_message exception: {e}")
+        return {"error": str(e)}
 
-    payload.setdefault("messaging_product", "whatsapp")
-    resp = requests.post(url, headers=headers, json=payload)
-    return resp.json()
 
-
-def send_text_message(to: str, body: str):
+def send_text_message(to: str, body: str) -> dict:
     """
-    Sends a simple text message (non‐template) via 360dialog V2.
-    Must include "messaging_product": "whatsapp" as well.
+    Send a plain text message.
+    - `to`: recipient’s phone number as digits only (no “+”).
+    - `body`: the text content.
     """
     url = "https://waba-v2.360dialog.io/messages"
     headers = {
         "D360-API-KEY": WHATSAPP_TOKEN,
         "Content-Type": "application/json"
     }
-
     payload = {
         "to": to,
         "type": "text",
-        "text": { "body": body },
-        "messaging_product": "whatsapp"
+        "messaging_product": "whatsapp",
+        "text": {"body": body}
     }
-
-    resp = requests.post(url, headers=headers, json=payload)
-    return resp.json()
+    try:
+        resp = requests.post(url, headers=headers, json=payload)
+        print(f"[DEBUG] send_text_message → status={resp.status_code} body={resp.text}")
+        return resp.json()
+    except Exception as e:
+        print(f"[ERROR] send_text_message exception: {e}")
+        return {"error": str(e)}

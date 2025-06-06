@@ -1,5 +1,3 @@
-# flows/mold.py
-
 import os
 import time
 from helpers import (
@@ -49,7 +47,7 @@ def send_mold_removal_faq(to: str, phone_number_id: str):
             "footer": {"text": "Tap an option"},
             "action": {
                 "button": "Select FAQ",
-                "sections": [{
+                "sections": [ {
                     "title": "FAQ Questions",
                     "rows": [
                         {
@@ -83,7 +81,7 @@ def send_mold_removal_faq(to: str, phone_number_id: str):
                             "description": "Payment methods accepted"
                         }
                     ]
-                }]
+                } ]
             }
         }
     }
@@ -235,14 +233,14 @@ def send_bedroom_count_prompt(to: str, phone_number_id: str):
             "footer": {"text": "Select an option"},
             "action": {
                 "button": "Select Count",
-                "sections": [{
+                "sections": [ {
                     "title": "Bedroom Count",
                     "rows": [
                         {"id": "bedroom_count_1", "title": "1 bedroom",                 "description": "One bedroom affected"},
                         {"id": "bedroom_count_2", "title": "2 bedrooms",                "description": "Two bedrooms affected"},
                         {"id": "bedroom_count_3", "title": "3 bedrooms or more",        "description": "Three or more"}
                     ]
-                }]
+                } ]
             }
         }
     }
@@ -269,14 +267,14 @@ def send_bathroom_count_prompt(to: str, phone_number_id: str):
             "footer": {"text": "Select an option"},
             "action": {
                 "button": "Select Count",
-                "sections": [{
+                "sections": [ {
                     "title": "Bathroom Count",
                     "rows": [
                         {"id": "bathroom_count_1", "title": "1 bathroom",                 "description": "One bathroom affected"},
                         {"id": "bathroom_count_2", "title": "2 bathrooms",                "description": "Two bathrooms affected"},
                         {"id": "bathroom_count_3", "title": "3 bathrooms or more",        "description": "Three or more"}
                     ]
-                }]
+                } ]
             }
         }
     }
@@ -335,7 +333,7 @@ def send_mold_growth_location(to: str, phone_number_id: str):
             "footer": {"text": "Choose an option"},
             "action": {
                 "button": "Select Location",
-                "sections": [{
+                "sections": [ {
                     "title": "Growth Options",
                     "rows": [
                         {"id": "growth_ceiling", "title": "Ceiling only",       "description": "Mold on ceiling"},
@@ -343,7 +341,7 @@ def send_mold_growth_location(to: str, phone_number_id: str):
                         {"id": "growth_both",    "title": "Walls and ceiling",  "description": "Mold on both"},
                         {"id": "growth_others",  "title": "Others",             "description": "Enter custom location"}
                     ]
-                }]
+                } ]
             }
         }
     }
@@ -628,7 +626,7 @@ def handle_mold_flow(from_number: str, message: dict, user_state: dict):
 def alert_internal_and_ask_photos(client_number: str):
     """
     Once user confirms the summary, send the booking alert internally,
-    then prompt the end user to upload wide‐angle photos, followed by an FAQ.
+    then prompt the end user to upload wide-angle photos, followed by an FAQ.
     """
     state = get_user_state(MOLD_PREFIX, client_number) or {}
     data = state
@@ -661,9 +659,9 @@ def alert_internal_and_ask_photos(client_number: str):
         f"{growth_text}"
     )
 
-    # Send alert to company number and chatbot number
-    company_no = "+6587788080"
-    bot_no     = "+6588662359"
+    # Send alert to company number and chatbot number (digits only; no leading “+”)
+    company_no = "6587788080"
+    bot_no     = "6588662359"
     send_text_message(to=company_no, body=summary_text)
     send_text_message(to=bot_no,      body=summary_text)
 

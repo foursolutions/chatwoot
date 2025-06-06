@@ -1,5 +1,3 @@
-# flows/bedbug.py
-
 import os
 import time
 from helpers import (

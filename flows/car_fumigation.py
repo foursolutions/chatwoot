@@ -1,5 +1,3 @@
-# flows/car_fumigation.py
-
 import os
 from datetime import datetime, timedelta
 
@@ -12,11 +10,11 @@ from helpers import (
     send_text_message
 )
 
-# ─── Internal alert numbers (without "+" or spaces) ───
+# ─── Internal alert numbers (digits only; no “+”) ───────────────
 ALERT_NUMBERS = [
-    "6588662359",  # Bot number +65 88662359
-    "6587788080",  # Company number +65 87788080
-    "6580681688",  # Sales in charge +65 80681688
+    "6588662359",  # Bot number (formerly +65 88662359)
+    "6587788080",  # Company number (formerly +65 87788080)
+    "6580681688",  # Sales in charge (formerly +65 80681688)
 ]
 
 # =====================================================================

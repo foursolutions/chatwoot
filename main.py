@@ -1,5 +1,3 @@
-# main.py
-
 from dispatcher import app
 
 if __name__ == "__main__":

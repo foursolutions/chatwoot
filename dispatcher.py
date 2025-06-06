@@ -26,9 +26,14 @@ REDIS_PREFIX_CAR  = "carfum"
 REDIS_PREFIX_MOLD = "mold"
 REDIS_PREFIX_BED  = "bedbug"
 
-# Name of your main menu template (must be defined in 1MSG Dashboard),
-# and it expects exactly ONE body parameter ({{1}}).
+# Name of your main menu template (must be defined in 1MSG Dashboard).
+# That template expects exactly ONE body parameter ({{1}}) in its definition.
 MAIN_MENU_TEMPLATE = os.getenv("MAIN_MENU_TEMPLATE", "main_menu_v2")
+
+# A default greeting to fill into the {{1}} placeholder.
+# Change this to whatever you want to display when sending the main menu.
+MAIN_MENU_GREETING = "Hi there, thanks for reaching out to Four Solutions! How may I help you today?"
+
 
 
 @app.route("/webhook", methods=["GET"])
@@ -48,6 +53,7 @@ def verify_webhook():
         return make_response("Verification token mismatch", 403)
 
 
+
 @app.route("/webhook", methods=["POST"])
 def receive_message():
     """
@@ -58,22 +64,23 @@ def receive_message():
           {
             "chatId": "6589123456@c.us",
             "type": "chat" | "button" | "interactive",
-            "body": "hello",                      # only if type == "chat" or type == "button"
-            "button_reply": {"id":"quick_reply_1"},  # if type == "button"
+            "body": "hello",                      # if type == "chat" OR type == "button"
+            "button_reply": {"id":"quick_reply_1"},  # if type == "button" and it’s a template button
             "interactive": {
                "type": "list_reply" or "button_reply",
-               ...
+               "list_reply": {"id":"option_1", "title":"Option 1"},
+               "button_reply": {"id":"btn_1", "title":"Button 1"}
             },
             ...
           }
         ],
-        "instanceId": "VAN388218473"
+        "instanceId": "VANxxxx"
       }
     """
     payload = request.get_json()
     print(f"[DEBUG] Received raw message payload: {json.dumps(payload)}")
 
-    # 1) Extract the "messages" array instead of entry/changes/value/messages
+    # 1) Extract the top-level "messages" array.
     messages = payload.get("messages", [])
     if not messages:
         return make_response("No messages to process", 200)
@@ -97,12 +104,11 @@ def receive_message():
             clear_user_state(REDIS_PREFIX_MOLD, from_number)
             clear_user_state(REDIS_PREFIX_BED, from_number)
 
-            # SEND the main menu template with EXACTLY ONE placeholder string.
-            # If you want a blank placeholder, just send "".
+            # Send the main menu template, providing exactly one non-empty text
             send_template_message(
                 to=from_number,
                 template_name=MAIN_MENU_TEMPLATE,
-                template_params=[""]   # ← exactly one element
+                template_params=[MAIN_MENU_GREETING]
             )
             return make_response("Reset: Main menu sent", 200)
 
@@ -135,7 +141,7 @@ def receive_message():
             )
             return make_response("Pest flow started", 200)
 
-        # ——— If user is already in a Mold flow, delegate TEXT to it ———
+        # ——— If user is already in Mold flow, delegate TEXT to it ———
         state_mold = get_user_state(REDIS_PREFIX_MOLD, from_number)
         if state_mold:
             print(f"[DEBUG] Delegating TEXT to handle_mold_flow for {from_number}, step={state_mold.get('step')}")
@@ -146,7 +152,7 @@ def receive_message():
             )
             return make_response("Mold flow TEXT handled", 200)
 
-        # ——— If user is already in a Bedbug flow, delegate TEXT to it ———
+        # ——— If user is already in Bedbug flow, delegate TEXT to it ———
         state_bed = get_user_state(REDIS_PREFIX_BED, from_number)
         if state_bed:
             print(f"[DEBUG] Delegating TEXT to handle_bedbug_flow for {from_number}, step={state_bed.get('step')}")
@@ -157,7 +163,7 @@ def receive_message():
             )
             return make_response("Bedbug flow TEXT handled", 200)
 
-        # ——— If user is already in a Car (Pest) flow, delegate TEXT to it ———
+        # ——— If user is already in Car (Pest) flow, delegate TEXT to it ———
         state_car = get_user_state(REDIS_PREFIX_CAR, from_number)
         if state_car:
             print(f"[DEBUG] Delegating TEXT to handle_car_fumigation_flow for {from_number}, step={state_car.get('step')}")
@@ -185,7 +191,7 @@ def receive_message():
             1MSG interactive with type=="button_reply" → msg["interactive"]["button_reply"]["id"]
             """
             msg_type_inner = msg.get("type", "")
-            # If it’s a 1MSG quick-reply, type == "button", text is in msg["body"]
+            # If it’s a 1MSG quick-reply button, type == "button", text is in msg["body"]
             if msg_type_inner == "button":
                 return msg.get("body", "").strip()
 
@@ -343,6 +349,7 @@ def receive_message():
         )
     )
     return make_response("Unsupported message type fallback sent", 200)
+
 
 
 if __name__ == "__main__":

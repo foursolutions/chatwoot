@@ -358,14 +358,14 @@ def send_quote_summary(to: str, phone_number_id: str):
     if state.get("manual_quote", False):
         # User selected Super/Luxury Cars or Others → show "Require agent to quote"
         summary_text = (
-            "On-Site Car Fumigation Quotation\n\n"
-            "Below is the estimated breakdown of your quotation:\n\n"
-            "- Car Model Type Pricing: Require agent to quote\n"
-            "- Additional Care Fee: Require agent to quote\n"
-            "- On-site Service Charge: Require agent to quote\n\n"
-            "Estimated Total: Your vehicle or service request requires an agent quotation. "
-            "Please allow our agent to assist you further.\n\n"
-            "Please select an option below:"
+            " On-Site Car Fumigation Quotation\n\n"
+            " Below is the estimated breakdown of your quotation:\n\n"
+            " - Car Model Type Pricing: Require agent to quote\n"
+            " - Additional Care Fee: Require agent to quote\n"
+            " - On-site Service Charge: Require agent to quote\n\n"
+            " Estimated Total: Your vehicle or service request requires an agent quotation. "
+            " Please allow our agent to assist you further.\n\n"
+            " Please select an option below:"
         )
     else:
         # Compute base, fee, location charge
@@ -400,7 +400,6 @@ def send_quote_summary(to: str, phone_number_id: str):
         additional_fee_str = f"${additional_fee}" if additional_fee != 0 else "$0"
         summary_text = (
             "On-Site Car Fumigation Quotation\n\n"
-            "Below is the estimated breakdown of your quotation:\n\n"
             f"- Car Model Type Pricing: ${base_quote}\n"
             f"- Additional Care Fee: {additional_fee_str}\n"
             f"- On-site Service Charge: ${location_charge}\n\n"
@@ -528,23 +527,14 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
 
     # ─── Helper to extract quick-reply BUTTON payload ───
     def extract_button_payload(msg: dict) -> str:
-        """
-        1MSG “button” → top-level "body"
-        1MSG “interactive” with type=="button_reply" → nested msg["interactive"]["button_reply"]["id"]
-        """
         msg_type_inner = msg.get("type", "")
-        # A) If 1MSG delivered a quick‐reply, its type is literally "button",
-        #    and the reply text is in msg["body"].
+        # 1MSG “button” → top-level "body"
         if msg_type_inner == "button":
             return msg.get("body", "").strip()
-
-        # B) If 1MSG delivered a template‐based or list‐based interactive button,
-        #    then msg["type"] == "interactive" and interactive.type == "button_reply".
-        if msg_type_inner == "interactive" and msg.get("interactive", {}).get("type") == "button_reply":
-            return msg["interactive"]["button_reply"].get("id", "").strip()
-
+        # 360dialog “button_reply” → nested msg["button"]["payload"]
+        if msg_type_inner == "button_reply" and "button" in msg:
+            return msg["button"].get("payload", "").strip()
         return ""
-
 
     # Retrieve or initialize state
     state = user_state or {}
@@ -566,8 +556,9 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             return
 
     # B) FAQ replies from interactive LIST (list_reply)
-    if step == "car_faq" and msg_type == "interactive" and "list_reply" in message:
-        selected_id = message["list_reply"]["id"]
+    #    ← updated so we only check inside message["interactive"]["list_reply"]
+    if step == "car_faq" and msg_type == "interactive" and message.get("interactive", {}).get("type") == "list_reply":
+        selected_id = message["interactive"]["list_reply"]["id"]
         if selected_id.startswith("cfq_"):
             process_car_fumigation_faq_response(from_number, selected_id)
             # Re-show FAQ list
@@ -722,8 +713,9 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
     # ----------------------------------------------------------------
     # 3) Handle interactive LIST replies
     # ----------------------------------------------------------------
-    if msg_type == "interactive" and "list_reply" in message:
-        selected_id = message["list_reply"]["id"]
+    # ← This block is updated so that we look under message["interactive"]["list_reply"]
+    if msg_type == "interactive" and message.get("interactive", {}).get("type") == "list_reply":
+        selected_id = message["interactive"]["list_reply"]["id"]
         print(f"[DEBUG] handle_car_fumigation_flow: LIST payload='{selected_id}' from {from_number}")
 
         state = user_state or {}

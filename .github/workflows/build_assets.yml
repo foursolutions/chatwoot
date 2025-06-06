@@ -17,46 +17,50 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Set up Node.js v20
-        uses: actions/setup-node@v3
-        with:
-          node-version: '20.19.2' # Exact to match your package.json
-          cache: 'yarn'
+      - name: Remove Ruby version enforcement
+        run: |
+          sed -i '/^ruby/d' Gemfile || true
+          rm -f .ruby-version
 
-      - name: Set up Ruby (bypass Gemfile version mismatch)
+      - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '3.3'
+          ruby-version: '3.3.0'
           bundler-cache: true
-          allow-failure: true # Allows install even if Gemfile requires 3.4.4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20.19.2'
+          cache: 'yarn'
 
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libpq-dev libvips
+          sudo apt-get install -y build-essential libvips libpq-dev jq
 
-      - name: Install Yarn manually (strict)
+      - name: Install Yarn (manual pin)
         run: |
-          corepack enable
-          corepack prepare yarn@1.22.22 --activate
+          npm install -g yarn@1.22.22
           yarn --version
 
-      - name: Patch package.json engine check to allow Node 20
+      - name: Patch Node.js engine constraint
         run: |
           jq 'del(.engines)' package.json > tmp.$$.json && mv tmp.$$.json package.json
 
       - name: Install JS packages
         run: yarn install --frozen-lockfile
 
-      - name: Install Ruby gems (ignoring version mismatch warning)
-        run: |
-          bundle config set --local force_ruby_platform true
-          bundle install
+      - name: Force Ruby native gem compatibility
+        run: bundle config set --local force_ruby_platform true
+
+      - name: Install Ruby gems
+        run: bundle install
 
       - name: Precompile assets
         run: bundle exec rails assets:precompile
 
-      - name: Commit precompiled assets
+      - name: Commit compiled assets
         run: |
           git config user.name github-actions
           git config user.email github-actions@github.com

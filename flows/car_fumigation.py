@@ -78,7 +78,7 @@ def handle_car_fumigation_flow(chat_id: str, msg: dict) -> None:
 
     # ─── Step 2: Expecting license plate text ───────────────────────────────────────
     if step == 2:
-        if msg.get("type") in ("text", "conversation"):
+        if msg.get("type") in ("text", "chat", "conversation"):
             plate = msg.get("text", {}).get("body", "").strip().upper()
             print(f"ℹ️ Received license_plate = {plate} from {chat_id}")
             state["license_plate"] = plate
@@ -205,7 +205,7 @@ def handle_car_fumigation_flow(chat_id: str, msg: dict) -> None:
                 send_template_message(
                     to=chat_id,
                     template_name="main_menu_v2",
-                    template_params=[]
+                    template_params=[""]
                 )
                 return
         else:

@@ -47,20 +47,19 @@ def webhook():
 
     msg = data["messages"][0]
     chat_id = msg.get("chatId")  # e.g. "6589123456@c.us"
-    msg_type = msg.get("type")   # e.g. "text", "list_reply", or "button_reply"
+    msg_type = msg.get("type")   # e.g. "chat", "text", "list_reply", or "button_reply"
 
     # ─── DEBUGGING: print chat_id & msg_type ───
     print(f"🔍 chat_id = {chat_id}, type = {msg_type}")
 
-    # Extract incoming_text for "text" or "button_reply"
+    # Extract incoming_text for "chat" or "text" or "button_reply" or "list_reply"
     incoming_text = ""
-    if msg_type in ("text", "conversation"):
-        # In some setups, initial conversation type may appear
+    if msg_type in ("text", "chat", "conversation"):
+        # In many 1msg setups, the text they send comes as type "chat"
         incoming_text = msg.get("text", {}).get("body", "").strip().lower()
     elif msg_type == "button_reply":
         incoming_text = msg["button_reply"].get("id", "").strip().lower()
     elif msg_type == "list_reply":
-        # list_reply also “clicks” a row; treat that similarly below
         incoming_text = msg["list_reply"].get("id", "").strip().lower()
 
     # ─── DEBUGGING: print the normalized incoming_text ───
@@ -78,10 +77,11 @@ def webhook():
 
         print("ℹ️ Sending main_menu_v2 template to", chat_id)
         try:
+            # NOTE: main_menu_v2 expects exactly 1 placeholder. We’ll pass an empty string.
             resp = send_template_message(
                 to=chat_id,
                 template_name=MAIN_MENU_TEMPLATE,
-                template_params=[]
+                template_params=[""]
             )
             print("✅ send_template_message returned:", resp)
         except Exception as e:
@@ -137,7 +137,7 @@ def webhook():
         send_template_message(
             to=chat_id,
             template_name=MAIN_MENU_TEMPLATE,
-            template_params=[]
+            template_params=[""]
         )
     except Exception as e:
         print("❌ Error re‐sending main_menu_v2:", e)

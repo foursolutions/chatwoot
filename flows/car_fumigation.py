@@ -517,24 +517,21 @@ def process_car_fumigation_faq_response(to: str, faq_id: str):
 def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict):
     """
     1) Determine whether this is a quick-reply button (message["type"] == "button"),
-       an interactive list reply (message["interactive"]["type"] == "list_reply"),
+       an interactive list reply (message["type"] == "interactive" with list_reply),
        or plain text (for "collect_*" steps).
     2) Extract payload/text, compare to current user_state["step"].
     3) Update Redis state accordingly.
     4) Call next send_*() function to continue the flow.
     """
     prefix = "carfum"
-    msg_type = message.get("type")  # "text", "button", or "interactive"
+    msg_type = message.get("type")  # "text", "button", "interactive", "button_reply", etc.
 
-    # ─── Helper to extract quick-reply payload ───
+    # ─── Helper to extract quick-reply BUTTON payload ───
     def extract_button_payload(msg: dict) -> str:
         msg_type_inner = msg.get("type", "")
         # 1MSG “button” → top-level "body"
         if msg_type_inner == "button":
             return msg.get("body", "").strip()
-        # 1MSG “interactive.button_reply” → nested
-        if msg_type_inner == "interactive" and msg["interactive"].get("type") == "button_reply":
-            return msg["interactive"]["button_reply"].get("id", "").strip()
         # 360dialog “button_reply” → nested msg["button"]["payload"]
         if msg_type_inner == "button_reply" and "button" in msg:
             return msg["button"].get("payload", "").strip()
@@ -547,8 +544,8 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
     # ----------------------------------------------------------------
     # 1) FAQ Handling: if step == "car_faq", handle FAQ replies first
     # ----------------------------------------------------------------
-    # A) FAQ replies from button payloads
-    if step == "car_faq" and msg_type in ["button", "interactive"]:
+    # A) FAQ replies from BUTTON payloads
+    if step == "car_faq" and msg_type in ["button", "button_reply"]:
         payload = extract_button_payload(message)
         if payload and payload.startswith("cfq_"):
             process_car_fumigation_faq_response(from_number, payload)
@@ -559,9 +556,9 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             )
             return
 
-    # B) FAQ replies from interactive list (list_reply)
-    if step == "car_faq" and msg_type == "interactive" and message["interactive"].get("type") == "list_reply":
-        selected_id = message["interactive"]["list_reply"]["id"]
+    # B) FAQ replies from interactive LIST (list_reply)
+    if step == "car_faq" and msg_type == "interactive" and "list_reply" in message:
+        selected_id = message["list_reply"]["id"]
         if selected_id.startswith("cfq_"):
             process_car_fumigation_faq_response(from_number, selected_id)
             # Re-show FAQ list
@@ -572,13 +569,13 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             return
 
     # ----------------------------------------------------------------
-    # 2) Handle quick-reply BUTTONS (either "button" or "interactive.button_reply")
+    # 2) Handle quick-reply BUTTONS
     # ----------------------------------------------------------------
-    if msg_type in ["button", "interactive", "button_reply"]:
+    if msg_type in ["button", "button_reply"]:
         payload = extract_button_payload(message)
         if payload:
             payload_lower = payload.lower()
-            print(f"[DEBUG] handle_car_fumigation_flow: BUTTON/BR payload='{payload_lower}' from {from_number}")
+            print(f"[DEBUG] handle_car_fumigation_flow: BUTTON payload='{payload_lower}' from {from_number}")
             state = user_state or {}
             step = state.get("step", "")
 
@@ -613,7 +610,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 return
 
             # D) “Book Now” on quote summary → Ask “Which Day?”
-            if step == "show_quote_summary" and payload_lower in ["book_appointment", "yes", "car_fum_confirm_yes"]:
+            if step == "show_quote_summary" and payload_lower in ["book_appointment", "car_fum_confirm_yes", "yes"]:
                 state["step"] = "collect_day_option"
                 set_user_state(prefix, from_number, state)
                 send_day_selection_prompt(
@@ -623,7 +620,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 return
 
             # E) “No” on final quote summary → back to quote summary
-            if step == "show_quote_summary" and payload_lower in ["no", "return_to_quote", "car_fum_confirm_no"]:
+            if step == "show_quote_summary" and payload_lower in ["return_to_quote", "car_fum_confirm_no", "no"]:
                 state["step"] = "select_location"
                 set_user_state(prefix, from_number, state)
                 send_quote_summary(
@@ -692,7 +689,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 return
 
             # H) “Yes”/“No” on luxury-fee prompt when step == "check_luxury"
-            if step == "check_luxury" and payload_lower in ["yes", "no", "luxury_yes", "luxury_no"]:
+            if step == "check_luxury" and payload_lower in ["luxury_yes", "luxury_no", "yes", "no"]:
                 if payload_lower in ["yes", "luxury_yes"]:
                     state["continental"] = "luxury_yes"
                 else:
@@ -706,7 +703,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 return
 
             # I) Unhandled button payload
-            print(f"[DEBUG] Unhandled BUTTON/BR payload: '{payload_lower}' (step={step})")
+            print(f"[DEBUG] Unhandled BUTTON payload: '{payload_lower}' (step={step})")
             send_text_message(
                 to=from_number,
                 body="Sorry, I didn’t understand that button. Type 'reset' to start over."
@@ -714,10 +711,10 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             return
 
     # ----------------------------------------------------------------
-    # 2) Handle interactive LIST replies
+    # 3) Handle interactive LIST replies
     # ----------------------------------------------------------------
-    if msg_type == "interactive" and message["interactive"].get("type") == "list_reply":
-        selected_id = message["interactive"]["list_reply"]["id"]
+    if msg_type == "interactive" and "list_reply" in message:
+        selected_id = message["list_reply"]["id"]
         print(f"[DEBUG] handle_car_fumigation_flow: LIST payload='{selected_id}' from {from_number}")
 
         state = user_state or {}
@@ -852,7 +849,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
     if msg_type == "text":
         state = user_state or {}
         step = state.get("step", "")
-        text_body = message["text"]["body"].strip()
+        text_body = message.get("text", {}).get("body", "").strip()
         print(f"[DEBUG] handle_car_fumigation_flow: TEXT at step='{step}': '{text_body}' from {from_number}")
 
         # A) collect_other_pest_text

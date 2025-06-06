@@ -1,146 +1,101 @@
 # dispatcher.py
-
+from flask import Flask, request, jsonify
 import os
-import json
-import redis
-from flask import Flask, request, Response
-
 from helpers import (
+    get_user_state,
+    set_user_state,
+    clear_user_state,
     send_text_message,
     send_template_message,
-    send_list_message,
-    API_KEY_1MSG,
-    BASE_URL_1MSG,
-    NAMESPACE_1MSG,
-    PHONE_NUMBER_ID,
-    MAIN_MENU_TEMPLATE
+    send_list_message
 )
-from flows.car_fumigation import handle_car_fumigation_flow
-from flows.bedbug import handle_bedbug_flow
-from flows.mold import handle_mold_flow
 
 app = Flask(__name__)
 
-# ─── Redis setup (for user-state storage) ──────────────────────────
-REDIS_URL = os.getenv("REDIS_URL", "")
-r = redis.from_url(REDIS_URL, decode_responses=True)
+MAIN_MENU_TEMPLATE = os.getenv("MAIN_MENU_TEMPLATE", "main_menu_v2")
 
+@app.route("/verify", methods=["GET"])
+def verify():
+    # standard Webhook verification (1msg handshake):
+    # 1msg will GET /verify?hub.verify_token=<VERIFY_TOKEN>&hub.challenge=<challenge>
+    # you respond with hub.challenge if token matches
+    token = request.args.get("hub.verify_token")
+    challenge = request.args.get("hub.challenge")
+    if token == os.getenv("VERIFY_TOKEN"):
+        return challenge, 200
+    return "Forbidden", 403
 
-# ─── Helpers to get/set user state in Redis ─────────────────
-def set_user_state(flow_prefix: str, user: str, state: dict):
-    r.hset(f"{flow_prefix}:{user}", mapping=state)
-
-def get_user_state(flow_prefix: str, user: str) -> dict:
-    raw = r.hgetall(f"{flow_prefix}:{user}")
-    return raw if raw else {}
-
-def clear_user_state(flow_prefix: str, user: str):
-    r.delete(f"{flow_prefix}:{user}")
-
-
-# ─── Entry Point for WhatsApp Webhook ───────────────────────────────────────
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    data = request.get_json()
-    # 1msg sends {"messages": [...], "instanceId": "..."}
-    messages = data.get("messages", [])
-    if not messages:
-        return Response(status=200)
+    data = request.get_json(force=True)
+    # data["messages"] is a list; we take the first element for simplicity
+    if "messages" not in data or len(data["messages"]) == 0:
+        return jsonify({}), 200
 
-    message = messages[0]
-    msg_type = message.get("type")    # "chat", "button", or "interactive"
-    body_text = message.get("body", "").strip().lower()
-    from_number = message.get("author", message.get("from", ""))  # e.g. "6587788080@c.us"
-    user_digits = from_number.split("@")[0]  # e.g. "6587788080"
+    msg = data["messages"][0]
+    chat_id = msg.get("chatId")  # e.g. "6589123456@c.us"
+    msg_type = msg.get("type")   # e.g. "text" or "button_reply" etc.
 
-    # ─── 1) RESET / unrecognized-text branch ──────────────────────────────────
-    if body_text == "reset" or msg_type == "chat" and body_text not in (
-        "need help on pest!", "need help on mold!", "live human"
-    ):
-        clear_user_state("car", user_digits)
-        clear_user_state("bed", user_digits)
-        clear_user_state("mold", user_digits)
+    # Extract the incoming text body (for text messages)
+    incoming_text = ""
+    if msg_type == "text":
+        incoming_text = msg["text"]["body"].strip().lower()
+    # If it’s a button reply (in 1msg’s format), they send:
+    #   msg_type == "button_reply"
+    #   msg["button_reply"]["id"]   # the ID you set when sending the button
+    #   msg["button_reply"]["title"]# the label
+    elif msg_type == "button_reply":
+        incoming_text = msg["button_reply"].get("id", "").lower()
 
-        # Send the main menu template again
-        resp = send_template_message(
-            to=user_digits,
-            template_name=MAIN_MENU_TEMPLATE,
-            template_params=["there"]
-        )
-        print(f"[DEBUG] RESET branch hit (body_text == 'reset'), will send main_menu_v2 → {resp}")
-        return Response(status=200)
+    # 2. If user typed "reset", we clear all state and fire main menu template
+    if incoming_text == "reset":
+        # Optionally clear each flow’s state prefix. For example:
+        clear_user_state("CAR_FUM", chat_id)
+        clear_user_state("MOLD", chat_id)
+        clear_user_state("BEDBUG", chat_id)
+        # ... any other prefixes you have
 
-    # ─── 2) BUTTON-press logic: Gateway to each flow ─────────────────────────
-    #    1msg now puts button taps into `msg_type == "button"`, with `body` == the button text.
-    if msg_type == "button":
-        button_text = message.get("body", "").strip().lower()
+        # Now send the main menu template
+        # We assume main_menu_v2 has no params (or maybe a single param for {{1}} = user’s name)
+        # Example: ["Nate"] if main_menu_v2 expects a name placeholder
+        try:
+            send_template_message(to=chat_id, template_name=MAIN_MENU_TEMPLATE, template_params=[])
+        except Exception as e:
+            print("❌ Failed to send main_menu_v2:", e)
+        return jsonify({}), 200
 
-        if button_text == "need help on pest!":
-            state = {}
-            set_user_state("car", user_digits, {"step": "start"})
-            return handle_car_fumigation_flow(
-                to_chat_id=user_digits,
-                message=message,
-                api_key=API_KEY_1MSG,
-                base_url=BASE_URL_1MSG
-            )
-
-        elif button_text == "need help on mold!":
-            state = {"step": "mold_option", "affected_areas": []}
-            set_user_state("mold", user_digits, state)
-            return handle_mold_flow(
-                from_number=user_digits,
-                message=message,
-                user_state=state
-            )
-
-        elif button_text == "live human":
-            # If you want a “live human” fallback, just send a notice:
-            send_text_message({
-                "to": user_digits,
-                "type": "text",
-                "messaging_product": "whatsapp",
-                "text": {"body": "Please hold on, a human will join shortly…"}
-            })
-            return Response(status=200)
-
-    # ─── 3) ROUTE INTO car_fumigation_flow if user is already mid-flow ─────────
-    car_state = get_user_state("car", user_digits)
-    if car_state:
-        return handle_car_fumigation_flow(
-            to_chat_id=user_digits,
-            message=message,
-            api_key=API_KEY_1MSG,
-            base_url=BASE_URL_1MSG
-        )
-
-    # ─── 4) ROUTE INTO bedbug_flow if user is already mid-flow ───────────────
-    bed_state = get_user_state("bed", user_digits)
-    if bed_state:
-        return handle_bedbug_flow(
-            from_number=user_digits,
-            message=message,
-            user_state=bed_state
-        )
-
-    # ─── 5) ROUTE INTO mold_flow if user is already mid-flow ────────────────
-    mold_state = get_user_state("mold", user_digits)
-    if mold_state:
-        return handle_mold_flow(
-            from_number=user_digits,
-            message=message,
-            user_state=mold_state
-        )
-
-    # ─── 6) FALLBACK: If none of the above matched ───────────────────────────
-    send_text_message({
-        "to": user_digits,
-        "type": "text",
-        "messaging_product": "whatsapp",
-        "text": { "body": "Sorry, I didn’t understand that. Type 'reset' to start over." }
-    })
-    return Response(status=200)
+    # 3. Otherwise, route into the correct flow based on user_state or button ID
+    # For example, if the user is currently in CAR_FUM flow, call:
+    #   flows/car_fumigation.handle_car_fumigation_flow(chat_id, msg)
+    # If user just clicked “Car Fumigation” in main menu, that might appear as a button_reply id of "car_fum"
+    #
+    # Example (very simplified):
+    state = get_user_state("CURRENT_FLOW", chat_id).get("flow_name")
+    if state == "CAR_FUM":
+        from flows.car_fumigation import handle_car_fumigation_flow
+        handle_car_fumigation_flow(chat_id, msg)
+    elif state == "MOLD":
+        from flows.mold import handle_mold_flow
+        handle_mold_flow(chat_id, msg)
+    #  ...
+    else:
+        # If no state yet, interpret incoming_text or button ID as “pick a flow”
+        # e.g. incoming_text == "car_fum" or a button id that your main_menu_v2 template used.
+        if incoming_text == "car_fum":
+            set_user_state("CURRENT_FLOW", chat_id, {"flow_name": "CAR_FUM"})
+            from flows.car_fumigation import handle_car_fumigation_flow
+            handle_car_fumigation_flow(chat_id, msg)
+        elif incoming_text == "mold":
+            set_user_state("CURRENT_FLOW", chat_id, {"flow_name": "MOLD"})
+            from flows.mold import handle_mold_flow
+            handle_mold_flow(chat_id, msg)
+        # ... etc
+        else:
+            # If we don’t know what they typed, re‐send main menu
+            send_template_message(to=chat_id, template_name=MAIN_MENU_TEMPLATE, template_params=[])
+    return jsonify({}), 200
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    # For local testing; in production Heroku will run via gunicorn
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=True)

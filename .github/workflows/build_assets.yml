@@ -33,7 +33,7 @@ jobs:
           npm install -g yarn
 
       - name: Install JS packages
-        run: yarn install --frozen-lockfile
+        run: yarn install
 
       - name: Install Ruby gems
         run: bundle install

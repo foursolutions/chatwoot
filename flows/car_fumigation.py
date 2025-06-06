@@ -1,35 +1,45 @@
 # flows/car_fumigation.py
-from helpers import get_user_state, set_user_state, clear_user_state, send_text_message, send_template_message, send_list_message
+from helpers import (
+    get_user_state,
+    set_user_state,
+    clear_user_state,
+    send_text_message,
+    send_template_message,
+    send_list_message
+)
 
-# Prefix used in Redis so that car fumigation state does not collide with other flows
 PREFIX = "CAR_FUM"
 
 def handle_car_fumigation_flow(chat_id: str, msg: dict) -> None:
     """
-    The main entry point for Car Fumigation flow. 
-    - If there is no existing state, send the first list or template to ask "Which vehicle?"
-    - Otherwise, read msg content and branch accordingly.
+    Main handler for Car Fumigation flow.
+    Steps:
+      0 → Send vehicle‐type list
+      1 → Expect list_reply: save vehicle_type, ask for license plate
+      2 → Expect text: save license_plate, send date list
+      3 → Expect list_reply: save appointment_date, send time list
+      4 → Expect list_reply: save appointment_time, send confirmation template
+      5 → Expect button_reply: either finalize or cancel
     """
     # 1. Load any saved state
-    state = get_user_state(PREFIX, chat_id)  # e.g. {"step": 1, "vehicle": "Honda"}
+    state = get_user_state(PREFIX, chat_id) or {}
     step = state.get("step", 0)
 
-    # 2. If step == 0, this is the first time we see them in CAR_FUM
+    # ─── Step 0: First time in CAR_FUM ──────────────────────────────────────────────
     if step == 0:
-        # e.g. send a list of options: "Select your vehicle type"
         sections = [
             {
                 "title": "Choose Vehicle Type",
                 "rows": [
-                    {"id": "car_fum_sedan",    "title": "Sedan",    "description": "Standard 4‐door sedan"},
-                    {"id": "car_fum_hatchback","title": "Hatchback","description": "Compact hatchback"},
-                    {"id": "car_fum_suv",      "title": "SUV",      "description": "Sports Utility Vehicle"},
-                    {"id": "car_fum_truck",    "title": "Truck",    "description": "Light Truck / Van"}
+                    {"id": "car_fum_sedan",    "title": "Sedan",     "description": "Standard 4‐door sedan"},
+                    {"id": "car_fum_hatchback","title": "Hatchback", "description": "Compact hatchback"},
+                    {"id": "car_fum_suv",      "title": "SUV",       "description": "Sports Utility Vehicle"},
+                    {"id": "car_fum_truck",    "title": "Truck",     "description": "Light Truck / Van"}
                 ]
             }
         ]
-        # The “action” label is the text on the button at the bottom of the list
         action_label = "Select Vehicle"
+        print(f"ℹ️ Sending vehicle‐type list to {chat_id} (step 0).")
         send_list_message(
             to=chat_id,
             body="Please select your vehicle type:",
@@ -38,53 +48,51 @@ def handle_car_fumigation_flow(chat_id: str, msg: dict) -> None:
             action=action_label,
             sections=sections
         )
-        # Mark state: next time we’re expecting a vehicle selection (step 1)
-        set_user_state(PREFIX, chat_id, {"step": 1})
+        state["step"] = 1
+        set_user_state(PREFIX, chat_id, state)
         return
 
-    # 3. If step == 1, we expect the user’s selection from the above list:
+    # ─── Step 1: Expecting list_reply with vehicle_type ───────────────────────────
     if step == 1:
-        # If user clicked a list row, 1msg will post back:
-        # msg["type"] == "list_reply"
-        # msg["list_reply"]["id"] == one of "car_fum_sedan", etc.
         if msg.get("type") == "list_reply":
             selected_id = msg["list_reply"]["id"]  # e.g. "car_fum_sedan"
-            # Save their selection
+            print(f"ℹ️ Received vehicle_type = {selected_id} from {chat_id}")
             state["vehicle_type"] = selected_id
             state["step"] = 2
             set_user_state(PREFIX, chat_id, state)
 
-            # Next: ask for location (maybe as a text prompt or another list)
+            # Ask for license plate (free‐text)
             send_text_message(
                 to=chat_id,
                 body="Great! What’s your car’s license plate number?",
-                footer="Reply with your plate (e.g. SSM1234A)."
+                footer="(e.g. SSM1234A)"
             )
             return
         else:
-            # If they typed something unexpected, repeat the list
+            # They didn’t click a list row—prompt again
             send_text_message(
                 to=chat_id,
-                body="Sorry, please select your vehicle type from the list above."
+                body="⚠️ Please select your vehicle type from the list above."
             )
             return
 
-    # 4. If step == 2, we expect them to type a license plate (free‐text).
+    # ─── Step 2: Expecting license plate text ───────────────────────────────────────
     if step == 2:
-        if msg.get("type") == "text":
-            plate = msg["text"]["body"].strip().upper()
+        if msg.get("type") in ("text", "conversation"):
+            plate = msg.get("text", {}).get("body", "").strip().upper()
+            print(f"ℹ️ Received license_plate = {plate} from {chat_id}")
             state["license_plate"] = plate
             state["step"] = 3
             set_user_state(PREFIX, chat_id, state)
 
-            # Next: ask for appointment date/time via another list
+            # Next: ask for appointment date via list
             sections = [
                 {
                     "title": "Select Date",
                     "rows": [
-                        {"id": "date_2025-06-10", "title": "10 June 2025", "description": ""},
-                        {"id": "date_2025-06-11", "title": "11 June 2025", "description": ""},
-                        {"id": "date_2025-06-12", "title": "12 June 2025", "description": ""},
+                        {"id":"date_2025-06-10", "title":"10 June 2025", "description":""},
+                        {"id":"date_2025-06-11", "title":"11 June 2025", "description":""},
+                        {"id":"date_2025-06-12", "title":"12 June 2025", "description":""}
                     ]
                 }
             ]
@@ -98,29 +106,29 @@ def handle_car_fumigation_flow(chat_id: str, msg: dict) -> None:
             )
             return
         else:
-            # They must send text for the license plate
             send_text_message(
                 to=chat_id,
-                body="Please type your license plate (e.g. SSM1234A)."
+                body="⚠️ Please type your license plate (e.g. SSM1234A)."
             )
             return
 
-    # 5. If step == 3, we expect a list reply for date:
+    # ─── Step 3: Expecting list_reply with appointment_date ────────────────────────
     if step == 3:
         if msg.get("type") == "list_reply":
             selected_date = msg["list_reply"]["id"]  # e.g. "date_2025-06-10"
+            print(f"ℹ️ Received appointment_date = {selected_date} from {chat_id}")
             state["appointment_date"] = selected_date
             state["step"] = 4
             set_user_state(PREFIX, chat_id, state)
 
-            # Next: Send time‐slot options (another list)
+            # Next: ask for time slot
             sections = [
                 {
                     "title": "Select Time",
                     "rows": [
-                        {"id": "time_0900",  "title": "09:00 AM",  "description": ""},
-                        {"id": "time_1300",  "title": "01:00 PM",  "description": ""},
-                        {"id": "time_1700",  "title": "05:00 PM",  "description": ""},
+                        {"id":"time_0900", "title":"09:00 AM", "description":""},
+                        {"id":"time_1300", "title":"01:00 PM", "description":""},
+                        {"id":"time_1700", "title":"05:00 PM", "description":""}
                     ]
                 }
             ]
@@ -136,26 +144,28 @@ def handle_car_fumigation_flow(chat_id: str, msg: dict) -> None:
         else:
             send_text_message(
                 to=chat_id,
-                body="Please choose a valid date from the list."
+                body="⚠️ Please choose a valid date from the list."
             )
             return
 
-    # 6. If step == 4, we expect a list reply for time:
+    # ─── Step 4: Expecting list_reply with appointment_time ───────────────────────
     if step == 4:
         if msg.get("type") == "list_reply":
             selected_time = msg["list_reply"]["id"]  # e.g. "time_0900"
+            print(f"ℹ️ Received appointment_time = {selected_time} from {chat_id}")
             state["appointment_time"] = selected_time
             state["step"] = 5
             set_user_state(PREFIX, chat_id, state)
 
-            # Next: confirm via template or buttons
-            # Suppose you have a template called "car_fum_appointment_confirmation"
-            # with placeholders for date, time, plate, etc.
+            # Next: send a confirmation template with buttons (yes/no)
+            # Suppose you have a template named "car_fum_appointment_confirmation"
+            # with placeholders for plate, date, and time.
             template_params = [
-                state["license_plate"],    # e.g. "SSM1234A"
-                state["appointment_date"], # e.g. "date_2025-06-10"
-                state["appointment_time"]  # e.g. "time_0900"
+                state["license_plate"],     # e.g. "SSM1234A"
+                state["appointment_date"],  # e.g. "date_2025-06-10"
+                state["appointment_time"]   # e.g. "time_0900"
             ]
+            print("ℹ️ Sending appointment confirmation template to", chat_id)
             send_template_message(
                 to=chat_id,
                 template_name="car_fum_appointment_confirmation",
@@ -165,41 +175,48 @@ def handle_car_fumigation_flow(chat_id: str, msg: dict) -> None:
         else:
             send_text_message(
                 to=chat_id,
-                body="Please select a valid time from the list."
+                body="⚠️ Please select a valid time from the list."
             )
             return
 
-    # 7. If step == 5, we might be waiting for them to confirm or cancel:
+    # ─── Step 5: Expecting button_reply to confirm or cancel ───────────────────────
     if step == 5:
-        # If your confirmation template had quick‐reply buttons (e.g. "Yes" / "No"),
-        # handle those IDs here. For example, if they clicked id="car_fum_confirm_yes":
         if msg.get("type") == "button_reply":
             btn_id = msg["button_reply"]["id"]
+            print(f"ℹ️ Received confirmation button id = {btn_id} from {chat_id}")
             if btn_id == "car_fum_confirm_yes":
-                # Finalize the quote, send summary
+                # Finalize the quote, send summary template
+                print("ℹ️ User confirmed. Sending quote summary.")
                 send_template_message(
                     to=chat_id,
                     template_name="car_fum_quote_summary",
-                    template_params=[ state["license_plate"], state["appointment_date"], state["appointment_time"] ]
+                    template_params=[
+                        state["license_plate"],
+                        state["appointment_date"],
+                        state["appointment_time"]
+                    ]
                 )
-                # Clear the user state so next time they must start fresh or type "reset"
                 clear_user_state(PREFIX, chat_id)
                 return
             elif btn_id == "car_fum_confirm_no":
-                # User canceled—redirect back to MAIN_MENU or restart CAR_FUM flow
+                # User canceled—go back to MAIN_MENU
+                print("ℹ️ User canceled appointment. Returning to main menu.")
                 clear_user_state(PREFIX, chat_id)
-                send_template_message(to=chat_id, template_name="main_menu_v2", template_params=[])
+                send_template_message(
+                    to=chat_id,
+                    template_name="main_menu_v2",
+                    template_params=[]
+                )
                 return
         else:
-            # If they typed something else (text), prompt them to click a button
             send_text_message(
                 to=chat_id,
-                body="Please tap one of the buttons to confirm or cancel."
+                body="⚠️ Please tap one of the buttons (Yes or No)."
             )
             return
 
-    # 8. Fallback: If none of the above, send an error or restart
+    # ─── Fallback: Unrecognized input ───────────────────────────────────────────────
     send_text_message(
         to=chat_id,
-        body="Sorry, I didn’t understand. Please type “reset” to return to the main menu."
+        body="⚠️ Sorry, I didn’t understand that. Please type “reset” to return to the main menu."
     )

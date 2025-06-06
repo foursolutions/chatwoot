@@ -1,74 +1,119 @@
-from flask import Flask, request, jsonify
-from flows import mold, bedbug, car_fumigation
-from utils import normalize_text, clear_user_state, get_user_state, set_user_state
-from helpers import send_text_message, send_template_message, send_main_menu_template
+# dispatcher.py
+
+import os
 import logging
+from flask import Flask, request, jsonify, make_response
+
+from helpers import (
+    send_text_message,
+    send_template_message,
+    get_user_state,
+    set_user_state,
+    clear_user_state
+)
+
+import flows.mold
+import flows.bedbug
+import flows.car_fumigation
 
 app = Flask(__name__)
-logging.basicConfig(level=logging.DEBUG)
+
+REDIS_PREFIX_MOLD = "mold"
+REDIS_PREFIX_BED = "bedbug"
+REDIS_PREFIX_CAR = "carfum"
+MAIN_MENU_TEMPLATE = "main_menu_v2"
+PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID", "")
 
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
+    payload = request.get_json()
     try:
-        data = request.json
-        logging.debug(f"🔍 Received webhook data: {data}")
+        entry = payload.get("entry", [])[0]
+        changes = entry.get("changes", [])[0]
+        value = changes.get("value", {})
+        messages = value.get("messages", [])
 
-        if "messages" in data and data["messages"]:
-            msg = data["messages"][0]
-            chat_id = msg.get("chatId")
-            msg_type = msg.get("type", "")
-            incoming_text = normalize_text(msg.get("body", ""))
+        if not messages:
+            return make_response("No messages to process", 200)
 
-            logging.debug(f"🔍 chat_id = {chat_id}, type = {msg_type}")
-            logging.debug(f"🔍 incoming_text (normalized) = '{incoming_text}'")
+        message = messages[0]
+        from_number = message["from"]
+        msg_type = message.get("type")
 
-            # RESET FLOW
-            if incoming_text == "reset":
-                logging.info(f"ℹ️ Reset command detected. Clearing all flow states for: {chat_id}")
-                clear_user_state("CAR_FUM", chat_id)
-                clear_user_state("MOLD", chat_id)
-                clear_user_state("BEDBUG", chat_id)
-                logging.info(f"ℹ️ Sending main_menu_v2 template to {chat_id}")
-                send_main_menu_template(chat_id)
-                return jsonify({}), 200
+        # ───────────────────────────────
+        # 1) TEXT MESSAGES
+        # ───────────────────────────────
+        if msg_type == "text":
+            text_body = message["text"]["body"].strip().lower()
+            print(f"[DEBUG] Received TEXT from {from_number}: '{text_body}'")
 
-            # DETERMINE CURRENT FLOW
-            current_flow = get_user_state("CURRENT_FLOW", chat_id).get("flow_name", "")
-            logging.debug(f"🔍 CURRENT_FLOW = {current_flow}")
+            if text_body == "reset":
+                print(f"[DEBUG] 'reset' detected for {from_number}. Clearing all states and sending main menu.")
+                clear_user_state(REDIS_PREFIX_CAR, from_number)
+                clear_user_state(REDIS_PREFIX_MOLD, from_number)
+                clear_user_state(REDIS_PREFIX_BED, from_number)
 
-            # ROUTE TO FLOW IF ACTIVE
-            if current_flow == "CAR_FUM":
-                return car_fumigation.receive_message(chat_id, msg)
-            if current_flow == "MOLD":
-                return mold.receive_message(chat_id, msg)
-            if current_flow == "BEDBUG":
-                return bedbug.receive_message(chat_id, msg)
+                car_fumigation.send_main_menu(to=from_number, phone_number_id=PHONE_NUMBER_ID)
+                return make_response("Reset: Main menu sent", 200)
 
-            # MAIN MENU SELECTION (button/list/text entry)
-            if incoming_text in ["car_fum", "need help on pest!", "car_fumigation"]:
-                set_user_state("CURRENT_FLOW", chat_id, {"flow_name": "CAR_FUM"})
-                return car_fumigation.receive_message(chat_id, msg)
+            if text_body in ["need help on mold!", "need help on mold"]:
+                clear_user_state(REDIS_PREFIX_MOLD, from_number)
+                set_user_state(REDIS_PREFIX_MOLD, from_number, {"step": "mold_option", "affected_areas": []})
+                mold.send_mold_option_prompt(to=from_number, phone_number_id=PHONE_NUMBER_ID)
+                return make_response("Mold flow started", 200)
 
-            if incoming_text in ["mold", "need help on mold!", "mold_check"]:
-                set_user_state("CURRENT_FLOW", chat_id, {"flow_name": "MOLD"})
-                return mold.receive_message(chat_id, msg)
+            if text_body in ["need help on pest!", "need help on pest"]:
+                clear_user_state(REDIS_PREFIX_CAR, from_number)
+                clear_user_state(REDIS_PREFIX_BED, from_number)
+                set_user_state(REDIS_PREFIX_CAR, from_number, {"step": "choose_service"})
+                car_fumigation.send_pest_control_list(to=from_number, phone_number_id=PHONE_NUMBER_ID)
+                return make_response("Pest flow started", 200)
 
-            if incoming_text in ["bedbug", "need help on bedbug!", "bedbug_check"]:
-                set_user_state("CURRENT_FLOW", chat_id, {"flow_name": "BEDBUG"})
-                return bedbug.receive_message(chat_id, msg)
+            # Delegate based on current active flow state
+            state_mold = get_user_state(REDIS_PREFIX_MOLD, from_number)
+            if state_mold:
+                mold.handle_mold_flow(from_number, message, state_mold)
+                return make_response("Mold flow TEXT handled", 200)
 
-            # DEFAULT RESPONSE
-            logging.warning(f"⚠️ Unknown input. Sending main menu to {chat_id}")
-            send_main_menu_template(chat_id)
-            return jsonify({}), 200
+            state_bed = get_user_state(REDIS_PREFIX_BED, from_number)
+            if state_bed:
+                bedbug.handle_bedbug_flow(from_number, message, state_bed)
+                return make_response("Bedbug flow TEXT handled", 200)
 
-        return jsonify({"status": "no_message"}), 200
+            state_car = get_user_state(REDIS_PREFIX_CAR, from_number)
+            if state_car:
+                car_fumigation.handle_car_fumigation_flow(from_number, message, state_car)
+                return make_response("Car flow TEXT handled", 200)
+
+            # Fallback
+            send_text_message(to=from_number, body="Please tap 'Need help on Pest!' or 'Need help on Mold!' to begin.")
+            return make_response("No active flow & TEXT fallback sent", 200)
+
+        # ───────────────────────────────
+        # 2) INTERACTIVE or BUTTON TYPES
+        # ───────────────────────────────
+        if msg_type in ["interactive", "button"]:
+            # Always check which flow is active
+            state_car = get_user_state(REDIS_PREFIX_CAR, from_number)
+            if state_car:
+                car_fumigation.handle_car_fumigation_flow(from_number, message, state_car)
+                return make_response("Car flow INTERACTIVE handled", 200)
+
+            state_mold = get_user_state(REDIS_PREFIX_MOLD, from_number)
+            if state_mold:
+                mold.handle_mold_flow(from_number, message, state_mold)
+                return make_response("Mold flow INTERACTIVE handled", 200)
+
+            state_bed = get_user_state(REDIS_PREFIX_BED, from_number)
+            if state_bed:
+                bedbug.handle_bedbug_flow(from_number, message, state_bed)
+                return make_response("Bedbug flow INTERACTIVE handled", 200)
+
+            # If no state is found
+            send_text_message(to=from_number, body="Please type 'reset' to start.")
+            return make_response("No state found for INTERACTIVE", 200)
 
     except Exception as e:
-        logging.error(f"❌ Error in receive_message: {e}")
-        return jsonify({"error": str(e)}), 200
-
-
-if __name__ == "__main__":
-    app.run(debug=True)
+        logging.exception("Error in webhook handler")
+        return make_response(f"Internal error: {e}", 500)

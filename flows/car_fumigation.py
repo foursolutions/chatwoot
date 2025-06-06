@@ -1,3 +1,5 @@
+# flows/car_fumigation.py
+
 import os
 from datetime import datetime, timedelta
 
@@ -5,16 +7,34 @@ from helpers import (
     get_user_state,
     set_user_state,
     clear_user_state,
-    send_text_message,
-    send_interactive_message,
     send_template_message,
+    send_interactive_message,
+    send_text_message
 )
 
-prefix = "carfum"
+# ─── Internal alert numbers (without "+" or spaces) ───
+ALERT_NUMBERS = [
+    "6588662359",  # Bot number +65 88662359
+    "6587788080",  # Company number +65 87788080
+    "6580681688",  # Sales in charge +65 80681688
+]
 
 
 # =====================================================================
-# 1) Send the Pest Control Services List (interactive list)
+# 1) Main Menu (Template)
+# =====================================================================
+def send_main_menu(to: str, phone_number_id: str):
+    greeting_name = "there"
+    resp = send_template_message(
+        to=to,
+        template_name="main_menu_v2",
+        template_params=[greeting_name]
+    )
+    print(f"[DEBUG] send_main_menu → 1MSG response: {resp}")
+
+
+# =====================================================================
+# 2) Pest Control Services → Interactive List
 # =====================================================================
 def send_pest_control_list(to: str, phone_number_id: str):
     payload = {
@@ -30,7 +50,7 @@ def send_pest_control_list(to: str, phone_number_id: str):
                 "button": "Select Service",
                 "sections": [
                     {
-                        "title": "Services",
+                        "title": "Common Pest Issues",
                         "rows": [
                             {"id": "car_fumigation",    "title": "Car Fumigation 🚗",    "description": "On-site fumigation & fogging"},
                             {"id": "bedbugs",           "title": "Bed Bugs 🛏️",         "description": "Elimination of bed bugs"},
@@ -50,7 +70,7 @@ def send_pest_control_list(to: str, phone_number_id: str):
 
 
 # =====================================================================
-# 2) Car Fumigation Menu → Template `car_fum_menu`
+# 3) Car Fumigation Menu → Template `car_fum_menu`
 # =====================================================================
 def send_car_fum_menu(to: str, phone_number_id: str):
     resp = send_template_message(
@@ -62,7 +82,7 @@ def send_car_fum_menu(to: str, phone_number_id: str):
 
 
 # =====================================================================
-# 3) Car Fumigation Info / Quote Options → Template `car_fum_quote_options`
+# 4) Car Fumigation Info / Quote Options → Template `car_fum_quote_options`
 # =====================================================================
 def send_car_fum_quote_options(to: str, phone_number_id: str):
     resp = send_template_message(
@@ -74,7 +94,7 @@ def send_car_fum_quote_options(to: str, phone_number_id: str):
 
 
 # =====================================================================
-# 4) “Select Pest Type” → Interactive List
+# 5) “Select Pest Type” → Interactive List
 # =====================================================================
 def send_pest_type_list(to: str, phone_number_id: str):
     payload = {
@@ -107,7 +127,7 @@ def send_pest_type_list(to: str, phone_number_id: str):
 
 
 # =====================================================================
-# 5) “Select Vehicle Type” → Interactive List
+# 6) “Select Vehicle Type” → Interactive List
 # =====================================================================
 def send_vehicle_type_list(to: str, phone_number_id: str):
     payload = {
@@ -123,13 +143,14 @@ def send_vehicle_type_list(to: str, phone_number_id: str):
                 "button": "Select Vehicle Type",
                 "sections": [
                     {
-                        "title": "Vehicle Categories",
+                        "title": "Vehicle Types",
                         "rows": [
-                            {"id": "vehicle_sedan",  "title": "Sedan 🚗",   "description": ""},
-                            {"id": "vehicle_suv",    "title": "SUV 🚙",      "description": ""},
-                            {"id": "vehicle_mpv",    "title": "MPV 🚐",      "description": ""},
-                            {"id": "vehicle_vans",   "title": "Van 🚛",      "description": ""},
-                            {"id": "vehicle_others", "title": "Others 🚘",   "description": ""}
+                            {"id": "vehicle_sedan",        "title": "Sedan/Hatchback",            "description": "Standard cars"},
+                            {"id": "vehicle_suv",          "title": "SUV",                         "description": "Sport Utility Vehicle"},
+                            {"id": "vehicle_mpv",          "title": "MPV",                         "description": "Multi-Purpose Vehicle"},
+                            {"id": "vehicle_vans",         "title": "Vans/Lorries",                "description": "Commercial vehicles"},
+                            {"id": "vehicle_ultra_luxury", "title": "Super/Luxury Cars",           "description": "e.g. Bentley, Ferrari, Lamborghini, Rolls Royce equivalent"},
+                            {"id": "vehicle_others",       "title": "Others",                      "description": "Other vehicle types"}
                         ]
                     }
                 ]
@@ -141,7 +162,7 @@ def send_vehicle_type_list(to: str, phone_number_id: str):
 
 
 # =====================================================================
-# 6) “Additional Care Fee” → Quick-Reply Buttons (Luxury-Brand Prompt)
+# 7) “Additional Care Fee” → Quick-Reply Buttons (Luxury-Brand Prompt)
 # =====================================================================
 def send_cfadditionalfee_prompt(to: str, phone_number_id: str):
     text = (
@@ -177,7 +198,7 @@ def send_cfadditionalfee_prompt(to: str, phone_number_id: str):
 
 
 # =====================================================================
-# 7) Utility: Send a dynamic list of the next 7 dates
+# Utility: Send a dynamic list of the next 7 dates
 # =====================================================================
 def send_upcoming_dates_list(to: str, phone_number_id: str):
     today = datetime.now()
@@ -235,22 +256,22 @@ def send_location_selection(to: str, phone_number_id: str):
         "messaging_product": "whatsapp",
         "interactive": {
             "type": "list",
-            "header": {"type": "text", "text": "Select Your Location"},
-            "body": {"text": "Where would you like us to service your vehicle?"},
-            "footer": {"text": "Tap to choose"},
+            "header": {"type": "text", "text": "On-Site Location Selection"},
+            "body": {"text": "Please select the location nearest to the address where your vehicle will be parked:"},
+            "footer": {"text": "Tap below to choose"},
             "action": {
                 "button": "Select Location",
                 "sections": [
                     {
-                        "title": "Areas",
+                        "title": "Locations",
                         "rows": [
-                            {"id": "location_north",     "title": "North",        "description": ""},
-                            {"id": "location_northeast", "title": "Northeast",    "description": ""},
-                            {"id": "location_east",      "title": "East",         "description": ""},
-                            {"id": "location_central",   "title": "Central",      "description": ""},
-                            {"id": "location_west",      "title": "West",         "description": ""},
-                            {"id": "location_south",     "title": "South",        "description": ""},
-                            {"id": "location_sentosa",   "title": "Sentosa",      "description": ""}
+                            {"id": "location_north",     "title": "North",                  "description": "Woodlands, Yishun, Sembawang, etc"},
+                            {"id": "location_northeast", "title": "North-East",             "description": "Hougang, Sengkang, Punggol, etc."},
+                            {"id": "location_central",   "title": "Central",                "description": "Orchard, Newton, River Valley, etc."},
+                            {"id": "location_east",      "title": "East",                   "description": "Bedok, Changi, Tampines, etc."},
+                            {"id": "location_west",      "title": "West",                   "description": "Jurong, Clementi, Bukit Batok, etc."},
+                            {"id": "location_south",     "title": "South",                  "description": "Bukit Merah, Bukit Timah, Queenstown"},
+                            {"id": "location_sentosa",   "title": "Sentosa & Restricted",   "description": "Sentosa, Tuas & restricted areas"}
                         ]
                     }
                 ]
@@ -262,7 +283,7 @@ def send_location_selection(to: str, phone_number_id: str):
 
 
 # =====================================================================
-# 9) “Which Day?” → Interactive Button Prompt (max 3 buttons)
+# 9) “Which Day?” → Interactive Button Prompt (Today, Tomorrow, Pick a Date)
 # =====================================================================
 def send_day_selection_prompt(to: str, phone_number_id: str):
     payload = {
@@ -291,9 +312,9 @@ def send_day_selection_prompt(to: str, phone_number_id: str):
 # 10) “Which Time?” → Interactive Button Prompt (max 3 buttons)
 # =====================================================================
 def send_time_selection_prompt(to: str, phone_number_id: str, chosen_date: str):
-    state = get_user_state(prefix, to) or {}
+    state = get_user_state("carfum", to) or {}
     state["appointment_date"] = chosen_date
-    set_user_state(prefix, to, state)
+    set_user_state("carfum", to, state)
 
     # Determine weekday name for chosen_date
     try:
@@ -333,10 +354,10 @@ def send_time_selection_prompt(to: str, phone_number_id: str, chosen_date: str):
 # 11) “Quote Summary” → Interactive Button Template
 # =====================================================================
 def send_quote_summary(to: str, phone_number_id: str):
-    state = get_user_state(prefix, to) or {}
+    state = get_user_state("carfum", to) or {}
 
     if state.get("manual_quote", False):
-        # User selected “Others” or “Require agent quote” category
+        # User selected Super/Luxury Cars or Others → show "Require agent to quote"
         summary_text = (
             "On-Site Car Fumigation Quotation\n\n"
             "Below is the estimated breakdown of your quotation:\n\n"
@@ -348,7 +369,7 @@ def send_quote_summary(to: str, phone_number_id: str):
             "Please select an option below:"
         )
     else:
-        # Compute base, additional fee, and location charge
+        # Compute base, fee, location charge
         vehicle = state.get("vehicle", "")
         if vehicle == "vehicle_sedan":
             base_quote = 140
@@ -375,13 +396,15 @@ def send_quote_summary(to: str, phone_number_id: str):
 
         computed_quote = base_quote + additional_fee + location_charge
         state["computed_quote"] = computed_quote
-        set_user_state(prefix, to, state)
+        set_user_state("carfum", to, state)
 
+        additional_fee_str = f"${additional_fee}" if additional_fee != 0 else "$0"
         summary_text = (
             "On-Site Car Fumigation Quotation\n\n"
+            "Below is the estimated breakdown of your quotation:\n\n"
             f"- Car Model Type Pricing: ${base_quote}\n"
-            f"- Additional Care Fee: ${additional_fee}\n"
-            f"- Location Charge: ${location_charge}\n\n"
+            f"- Additional Care Fee: {additional_fee_str}\n"
+            f"- On-site Service Charge: ${location_charge}\n\n"
             f"Estimated Total: ${computed_quote}\n\n"
             "Please select an option below:"
         )
@@ -409,11 +432,12 @@ def send_quote_summary(to: str, phone_number_id: str):
 # =====================================================================
 # 12) Car Fumigation FAQ Interactive List
 # =====================================================================
-def send_car_fumigation_faq(to: str, phone_number_id: str):
+def send_car_fumigation_faq(to, phone_number_id: str):
     payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
         "to": to,
         "type": "interactive",
-        "messaging_product": "whatsapp",
         "interactive": {
             "type": "list",
             "header": {"type": "text", "text": "Car Fumigation FAQ"},
@@ -421,19 +445,17 @@ def send_car_fumigation_faq(to: str, phone_number_id: str):
             "footer": {"text": "Tap an option"},
             "action": {
                 "button": "Select FAQ",
-                "sections": [
-                    {
-                        "title": "FAQ Questions",
-                        "rows": [
-                            {"id": "cfq_safe",        "title": "Is it safe? Kids/Pets",   "description": "Safety with HACCP chemicals"},
-                            {"id": "cfq_included",    "title": "Service Details",          "description": "What's included in our service?"},
-                            {"id": "cfq_warranty",    "title": "Our Warranty",            "description": "Warranty information"},
-                            {"id": "cfq_preparation", "title": "Preparation",             "description": "What to prepare before service"},
-                            {"id": "cfq_duration",    "title": "Service Duration",        "description": "How long the service takes"},
-                            {"id": "cfq_payment",     "title": "Payment Options",         "description": "Payment methods accepted"}
-                        ]
-                    }
-                ]
+                "sections": [{
+                    "title": "FAQ Questions",
+                    "rows": [
+                        {"id": "cfq_safe",       "title": "Is it safe? Kids/Pets",   "description": "Safety with HACCP chemicals"},
+                        {"id": "cfq_included",   "title": "Service Details",          "description": "What's included in our service?"},
+                        {"id": "cfq_warranty",   "title": "Our Warranty",            "description": "Warranty information"},
+                        {"id": "cfq_preparation","title": "Preparation",             "description": "What to prepare before service"},
+                        {"id": "cfq_duration",   "title": "Service Duration",        "description": "How long the service takes"},
+                        {"id": "cfq_payment",    "title": "Payment Options",         "description": "Payment methods accepted"}
+                    ]
+                }]
             }
         }
     }
@@ -459,8 +481,11 @@ def process_car_fumigation_faq_response(to: str, faq_id: str):
             "• Application of a residual protective coating lasting up to 3 months."
         ),
         "cfq_warranty": (
-            "We provide a 30-day coverage warranty. If any live pests return within this window, "
-            "we will re-treat your vehicle at no additional cost."
+            "Warranty eligibility is assessed by our on-site technician post-service, provided no cockroaches are found after treatment.\n"
+            "Warranty terms:\n"
+            "• Effective from 1 week after initial servicing, lasting an additional 3 weeks (total 1-month coverage).\n"
+            "• One-time complimentary car fumigation at the original service location.\n"
+            "Please allow 7-14 working days for warranty appointment scheduling; earlier slots may be available."
         ),
         "cfq_preparation": (
             "Please follow these preparation steps:\n"
@@ -488,106 +513,90 @@ def process_car_fumigation_faq_response(to: str, faq_id: str):
 
 
 # =====================================================================
-# 13) Universal flow‐handler: handle_car_fumigation_flow
+# 13) Universal flow-handler: handle_car_fumigation_flow
 # =====================================================================
 def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict):
     """
-    1) Determine whether this is:
-       - an interactive list reply (message["type"] == "interactive" with "list_reply"),
-       - a quick‐reply button (message["type"] == "button" or "button_reply"),
-       - or plain text (for “collect_*” steps).
-    2) Extract payload / ID, compare to current user_state["step"].
+    1) Determine whether this is a 1MSG quick‐reply button (message["interactive"]["type"] == "button_reply"),
+       an interactive list reply (message["interactive"]["type"] == "list_reply"),
+       or plain text (for "collect_*" steps).
+    2) Extract payload/text, compare to current user_state["step"].
     3) Update Redis state accordingly.
     4) Call next send_*() function to continue the flow.
     """
     prefix = "carfum"
-    msg_type = message.get("type", "")  # could be "text", "button", "interactive", "button_reply", etc.
 
-    # ─── 0) FIRST: Handle the “choose_service” interactive LIST reply ───
+    # ─── Helper to normalize 1MSG interactive types into msg_type ───
+    def determine_msg_type(msg: dict) -> str:
+        """
+        - If a 1MSG interactive object exists, look at its subtype:
+          * "button_reply" → return "button"
+          * "list_reply"   → return "interactive"
+        - Otherwise, fallback to msg["type"] (360dialog legacy).
+        """
+        if "interactive" in msg:
+            it = msg["interactive"].get("type", "")
+            if it == "button_reply":
+                return "button"
+            if it == "list_reply":
+                return "interactive"
+        return msg.get("type", "")
+
+    msg_type = determine_msg_type(message)
+
+    # ─── Helper to extract quick‐reply BUTTON payload, for either 1MSG or 360dialog ───
+    def extract_button_payload(msg: dict) -> str:
+        # 1MSG quick‐reply:
+        if "interactive" in msg:
+            itype = msg["interactive"].get("type", "")
+            if itype == "button_reply":
+                return msg["interactive"]["button_reply"].get("id", "").strip()
+        # 360dialog legacy: msg["type"] == "button"
+        if msg.get("type") == "button":
+            return msg.get("body", "").strip()
+        # 360dialog legacy: msg["type"] == "button_reply" with msg["button"]["payload"]
+        if msg.get("type") == "button_reply" and "button" in msg:
+            return msg["button"].get("payload", "").strip()
+        return ""
+
+    # Retrieve or initialize state
     state = user_state or {}
     step = state.get("step", "")
 
-    if step == "choose_service" and msg_type == "interactive" and "list_reply" in message:
-        # Extract which service the user selected from the list
-        selected_id = message["list_reply"]["id"]
-        print(f"[DEBUG] handle_car_fumigation_flow: LIST payload='{selected_id}' from {from_number}")
-
-        if selected_id == "car_fumigation":
-            # User chose Car Fumigation → send the Car Fumigation menu
-            state["step"] = "car_menu"
-            set_user_state(prefix, from_number, state)
-            send_car_fum_menu(
-                to=from_number,
-                phone_number_id=os.getenv("PHONE_NUMBER_ID")
-            )
-            return
-
-        # If you want to support other pest services here (bedbugs, roaches_ants, etc.),
-        # you can add additional branches such as:
-        #
-        # elif selected_id == "bedbugs":
-        #     state["step"] = "bedbug_flow"
-        #     set_user_state(prefix, from_number, state)
-        #     send_bedbug_menu(...)
-        #     return
-        #
-        # In this example, we only route “car_fumigation” to the car‐specific menu.
-
-        # If the ID doesn't match a known service, send a fallback
-        send_text_message(
-            to=from_number,
-            body="Sorry, I didn’t recognize that service. Please tap “Need help on Pest!” to restart."
-        )
-        clear_user_state(prefix, from_number)
-        return
-
-    # ─── 1) FAQ Handling: if step == "car_faq", handle FAQ replies first ───
-    # A) FAQ replies from quick‐reply BUTTON payloads
-    if step == "car_faq" and msg_type in ["button", "button_reply"]:
-        payload = ""
-        inner_type = message.get("type", "")
-        # 1MSG “button” → top‐level "body"
-        if inner_type == "button":
-            payload = message.get("body", "").strip()
-        # 360dialog “button_reply” → nested msg["button"]["payload"]
-        elif inner_type == "button_reply" and "button" in message:
-            payload = message["button"].get("payload", "").strip()
-
-        if payload.startswith("cfq_"):
+    # ----------------------------------------------------------------
+    # 1) FAQ Handling: if step == "car_faq", handle FAQ replies first
+    # ----------------------------------------------------------------
+    if step == "car_faq" and msg_type == "button":
+        payload = extract_button_payload(message)
+        if payload and payload.startswith("cfq_"):
             process_car_fumigation_faq_response(from_number, payload)
-            # Re‐show FAQ list so user can select again
+            # Re-show FAQ list
             send_car_fumigation_faq(
                 to=from_number,
                 phone_number_id=os.getenv("PHONE_NUMBER_ID")
             )
             return
 
-    # B) FAQ replies from interactive LIST (list_reply)
-    if step == "car_faq" and msg_type == "interactive" and "list_reply" in message:
-        selected_id = message["list_reply"]["id"]
-        if selected_id.startswith("cfq_"):
-            process_car_fumigation_faq_response(from_number, selected_id)
-            # Re‐show FAQ list
-            send_car_fumigation_faq(
-                to=from_number,
-                phone_number_id=os.getenv("PHONE_NUMBER_ID")
-            )
-            return
+    if step == "car_faq" and msg_type == "interactive":
+        # 1MSG list_reply block:
+        if "interactive" in message and message["interactive"].get("type") == "list_reply":
+            selected_id = message["interactive"]["list_reply"].get("id", "")
+            if selected_id.startswith("cfq_"):
+                process_car_fumigation_faq_response(from_number, selected_id)
+                send_car_fumigation_faq(
+                    to=from_number,
+                    phone_number_id=os.getenv("PHONE_NUMBER_ID")
+                )
+                return
 
-    # ─── 2) Handle quick‐reply BUTTONS (non‐FAQ) ───────────────────────────
-    if msg_type in ["button", "button_reply"]:
-        # Extract payload for quick‐reply buttons
-        payload = ""
-        inner_type = message.get("type", "")
-        if inner_type == "button":
-            payload = message.get("body", "").strip()
-        elif inner_type == "button_reply" and "button" in message:
-            payload = message["button"].get("payload", "").strip()
-
+    # ----------------------------------------------------------------
+    # 2) Handle quick‐reply BUTTONS (1MSG or 360dialog)
+    # ----------------------------------------------------------------
+    if msg_type == "button":
+        payload = extract_button_payload(message)
         if payload:
             payload_lower = payload.lower()
             print(f"[DEBUG] handle_car_fumigation_flow: BUTTON payload='{payload_lower}' from {from_number}")
-
             state = user_state or {}
             step = state.get("step", "")
 
@@ -615,10 +624,9 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             # C) “Return to Main Menu”
             if payload_lower in ["return to main menu", "return_main_menu"]:
                 clear_user_state(prefix, from_number)
-                # This function is not defined here; replace with your actual main-menu sender
-                send_text_message(
+                send_main_menu(
                     to=from_number,
-                    body="Returning you to the main menu. Please tap 'Need help on Pest!' or 'Need help on Mold!'."
+                    phone_number_id=os.getenv("PHONE_NUMBER_ID")
                 )
                 return
 
@@ -670,7 +678,7 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                     return
 
                 if payload_lower == "day_pick":
-                    state["step"] = "pick_date"
+                    state["step"] = "collect_date_option"
                     set_user_state(prefix, from_number, state)
                     send_upcoming_dates_list(
                         to=from_number,
@@ -680,12 +688,32 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
 
             # G) “Which Time?” step = collect_time_option
             if step == "collect_time_option" and payload_lower in ["time_morning", "time_afternoon", "time_evening"]:
-                selected_time = {
-                    "time_morning": "10:00AM - 12:00PM",
-                    "time_afternoon": "12:00PM - 6:00PM",
-                    "time_evening": "6:00PM - 11:59PM"
-                }[payload_lower]
-                state["appointment_time"] = selected_time
+                if payload_lower == "time_morning":
+                    state["appointment_time"] = "10:00"
+                elif payload_lower == "time_afternoon":
+                    state["appointment_time"] = "12:00"
+                else:  # "time_evening"
+                    state["appointment_time"] = "18:00"
+
+                state["step"] = "collect_final_details"
+                set_user_state(prefix, from_number, state)
+                send_text_message(
+                    to=from_number,
+                    body=(
+                        "Great! Please reply in one sentence using **this format, separated by commas**:\n\n"
+                        "Vehicle Model, Vehicle Number, On-site Location\n"
+                        "For example:\n"
+                        "**Toyota Wish, SSS4444X, Tampines North Drive 1, Singapore 528559**"
+                    )
+                )
+                return
+
+            # H) “Yes”/“No” on luxury-fee prompt when step == "check_luxury"
+            if step == "check_luxury" and payload_lower in ["luxury_yes", "luxury_no", "yes", "no"]:
+                if payload_lower in ["yes", "luxury_yes"]:
+                    state["continental"] = "luxury_yes"
+                else:
+                    state["continental"] = "luxury_no"
                 state["step"] = "select_location"
                 set_user_state(prefix, from_number, state)
                 send_location_selection(
@@ -694,23 +722,159 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
                 )
                 return
 
-            # H) “Select Location” step = select_location handling
-            if step == "select_location":
-                # In case you sent a button‐style location prompt, handle it here
-                # But we used a LIST for location, so “select_location” via interactive LIST will appear below
-                pass
+            # I) Unhandled button payload
+            print(f"[DEBUG] Unhandled BUTTON payload: '{payload_lower}' (step={step})")
+            send_text_message(
+                to=from_number,
+                body="Sorry, I didn’t understand that button. Type 'reset' to start over."
+            )
+            return
 
-    # ─── 3) LIST‐REPLY (“interactive” with “list_reply”) for deeper steps ───
-    if msg_type == "interactive" and "list_reply" in message:
-        selected_id = message["list_reply"]["id"]
+    # ----------------------------------------------------------------
+    # 3) Handle interactive LIST replies (1MSG “interactive” / “type”: “list_reply”)
+    # ----------------------------------------------------------------
+    if msg_type == "interactive":
+        # 1MSG list reply lives under message["interactive"]["type"] == "list_reply"
+        if "interactive" in message and message["interactive"].get("type") == "list_reply":
+            selected_id = message["interactive"]["list_reply"].get("id", "")
+            print(f"[DEBUG] handle_car_fumigation_flow: LIST payload='{selected_id}' from {from_number}")
+
+            state = user_state or {}
+            step = state.get("step", "")
+
+            # A) Handling FAQ list selection was covered above
+
+            # B) step == "choose_service": Pest Control Services list
+            if step == "choose_service":
+                if selected_id == "car_fumigation":
+                    state.clear()
+                    state["step"] = "select_pest_type"
+                    set_user_state(prefix, from_number, state)
+                    send_pest_type_list(
+                        to=from_number,
+                        phone_number_id=os.getenv("PHONE_NUMBER_ID")
+                    )
+                    return
+                else:
+                    send_text_message(
+                        to=from_number,
+                        body="Sorry, that service is not available yet. Type 'reset' to start over."
+                    )
+                    return
+
+            # C) step == "select_pest_type": Pest Type list
+            if step == "select_pest_type":
+                if selected_id == "other_pest":
+                    state["step"] = "collect_other_pest_text"
+                    set_user_state(prefix, from_number, state)
+                    send_text_message(
+                        to=from_number,
+                        body="Please type in which pest you saw in your vehicle."
+                    )
+                    return
+                else:
+                    state["pest_type"] = selected_id
+                    state["step"] = "select_vehicle_type"
+                    set_user_state(prefix, from_number, state)
+                    send_vehicle_type_list(
+                        to=from_number,
+                        phone_number_id=os.getenv("PHONE_NUMBER_ID")
+                    )
+                    return
+
+            # D) step == "select_vehicle_type": Vehicle Type list
+            if step == "select_vehicle_type":
+                if selected_id == "vehicle_others":
+                    state["step"] = "collect_other_vehicle_text"
+                    state["vehicle"] = selected_id
+                    state["manual_quote"] = True
+                    set_user_state(prefix, from_number, state)
+                    send_text_message(
+                        to=from_number,
+                        body="Please type in your vehicle model (e.g. Toyota Hiace, Proton X70, etc.)."
+                    )
+                    return
+                elif selected_id == "vehicle_ultra_luxury":
+                    state["step"] = "select_location"
+                    state["vehicle"] = selected_id
+                    state["manual_quote"] = True
+                    set_user_state(prefix, from_number, state)
+                    send_location_selection(
+                        to=from_number,
+                        phone_number_id=os.getenv("PHONE_NUMBER_ID")
+                    )
+                    return
+                else:
+                    state["vehicle"] = selected_id
+                    state["step"] = "check_luxury"
+                    state["manual_quote"] = False
+                    set_user_state(prefix, from_number, state)
+                    send_cfadditionalfee_prompt(
+                        to=from_number,
+                        phone_number_id=os.getenv("PHONE_NUMBER_ID")
+                    )
+                    return
+
+            # E) step == "select_location": Service Zone list
+            if step == "select_location":
+                state["location"] = selected_id
+                state["step"] = "show_quote_summary"
+                set_user_state(prefix, from_number, state)
+                send_quote_summary(
+                    to=from_number,
+                    phone_number_id=os.getenv("PHONE_NUMBER_ID")
+                )
+                return
+
+            # F) step == "collect_date_option": user selected from upcoming dates
+            if step == "collect_date_option":
+                if selected_id.startswith("date_"):
+                    # Extract date part: "date_09-06-2025" → "09-06-2025"
+                    _, date_str = selected_id.split("_", 1)
+                    state["appointment_date"] = date_str
+                    state["step"] = "collect_time_option"
+                    set_user_state(prefix, from_number, state)
+                    send_time_selection_prompt(
+                        to=from_number,
+                        phone_number_id=os.getenv("PHONE_NUMBER_ID"),
+                        chosen_date=date_str
+                    )
+                    return
+                elif selected_id == "other_dates":
+                    state["step"] = "collect_custom_date_text"
+                    set_user_state(prefix, from_number, state)
+                    send_text_message(
+                        to=from_number,
+                        body=(
+                            "Please type your preferred date in `DD-MM-YYYY` format.  \n"
+                            "For example: `11-06-2025`."
+                        )
+                    )
+                    return
+
+            # G) step == "car_faq": (already handled above)
+
+            # Otherwise, unexpected step
+            print(f"[DEBUG] LIST reply received but step='{step}' is unexpected")
+            send_text_message(
+                to=from_number,
+                body="Sorry, I didn’t understand that. Type 'reset' to start over."
+            )
+            return
+
+    # ----------------------------------------------------------------
+    # 4) Handle plain-text replies at “collect_*” steps
+    # ----------------------------------------------------------------
+    if msg_type == "text":
         state = user_state or {}
         step = state.get("step", "")
+        text_body = message.get("text", {}).get("body", "").strip()
+        print(f"[DEBUG] handle_car_fumigation_flow: TEXT at step='{step}': '{text_body}' from {from_number}")
 
-        # A) “Which Pest Type?” step = select_pest_type
-        if step == "select_pest_type":
-            # Save pest type
-            state["pest_type"] = selected_id  # e.g. “cockroach”, “ants”, etc.
-            state["step"] = "select_vehicle"
+        # A) collect_other_pest_text
+        if step == "collect_other_pest_text":
+            state["pest_type"] = text_body
+            state["step"] = "select_vehicle_type"
             set_user_state(prefix, from_number, state)
             send_vehicle_type_list(
                 to=from_number,
@@ -718,120 +882,223 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
             )
             return
 
-        # B) “Select Vehicle Type” step = select_vehicle
-        if step == "select_vehicle":
-            state["vehicle"] = selected_id  # e.g. “vehicle_sedan”, “vehicle_suv”, etc.
-            # If “Others”, mark manual_quote and jump to quote summary
-            if selected_id == "vehicle_others":
-                state["manual_quote"] = True
-            state["step"] = "select_additional_fee"
+        # B) collect_other_vehicle_text
+        if step == "collect_other_vehicle_text":
+            state["vehicle_model"] = text_body
+            state["step"] = "select_location"
             set_user_state(prefix, from_number, state)
-            send_cfadditionalfee_prompt(
+            send_location_selection(
                 to=from_number,
                 phone_number_id=os.getenv("PHONE_NUMBER_ID")
             )
             return
 
-        # C) “Which Day?” step = pick_date
-        if step == "pick_date":
-            if selected_id.startswith("date_"):
-                # Extract the date string from “date_DD-MM-YYYY”
-                chosen_date = selected_id.replace("date_", "")
-                state["appointment_date"] = chosen_date
-                state["step"] = "collect_time_option"
-                set_user_state(prefix, from_number, state)
-                send_time_selection_prompt(
-                    to=from_number,
-                    phone_number_id=os.getenv("PHONE_NUMBER_ID"),
-                    chosen_date=chosen_date
-                )
-                return
-            elif selected_id == "other_dates":
-                # Let user type a date manually
-                state["step"] = "manual_date_entry"
-                set_user_state(prefix, from_number, state)
-                send_text_message(
-                    to=from_number,
-                    body="Please type your preferred date in DD-MM-YYYY format."
-                )
-                return
-
-        # D) “Select Location” step = select_location
-        if step == "select_location":
-            state["location"] = selected_id  # e.g. “location_north”, etc.
-            state["step"] = "show_quote_summary"
-            set_user_state(prefix, from_number, state)
-            send_quote_summary(
-                to=from_number,
-                phone_number_id=os.getenv("PHONE_NUMBER_ID")
-            )
-            return
-
-    # ─── 4) TEXT (manual entry) for steps that require free‐form input ───
-    if msg_type == "text":
-        text_body = message["text"]["body"].strip().lower()
-        state = user_state or {}
-        step = state.get("step", "")
-
-        # A) If user is manually entering a date
-        if step == "manual_date_entry":
-            # Validate DD-MM-YYYY
+        # C) collect_custom_date_text (user enters DD-MM-YYYY)
+        if step == "collect_custom_date_text":
+            user_date = text_body
             try:
-                datetime.strptime(text_body, "%d-%m-%Y")
-                state["appointment_date"] = text_body
+                # Validate DD-MM-YYYY
+                parsed = datetime.strptime(user_date, "%d-%m-%Y")
+                state["appointment_date"] = user_date
                 state["step"] = "collect_time_option"
                 set_user_state(prefix, from_number, state)
                 send_time_selection_prompt(
                     to=from_number,
                     phone_number_id=os.getenv("PHONE_NUMBER_ID"),
-                    chosen_date=text_body
+                    chosen_date=user_date
                 )
             except ValueError:
                 send_text_message(
                     to=from_number,
-                    body="That date format wasn’t recognized. Please enter in DD-MM-YYYY format."
+                    body="Sorry, I couldn’t parse that date. Please use `DD-MM-YYYY`, e.g. `11-06-2025`."
                 )
             return
 
-        # B) If user types a custom time (e.g., “18:30” or “6:30pm”)
-        if step == "collect_time_option":
-            # Very basic pattern: accept anything that looks like “hh:mm”
-            if ":" in text_body:
-                state["appointment_time"] = text_body
-                state["step"] = "select_location"
+        # D) collect_date_option: user typed a date instead of tapping a list item
+        if step == "collect_date_option":
+            user_date = text_body
+            try:
+                # Try parsing DD-MM-YYYY
+                parsed = datetime.strptime(user_date, "%d-%m-%Y")
+                # If valid, store and move to time selection
+                state["appointment_date"] = user_date
+                state["step"] = "collect_time_option"
                 set_user_state(prefix, from_number, state)
-                send_location_selection(
+                send_time_selection_prompt(
                     to=from_number,
-                    phone_number_id=os.getenv("PHONE_NUMBER_ID")
+                    phone_number_id=os.getenv("PHONE_NUMBER_ID"),
+                    chosen_date=user_date
                 )
-            else:
+            except ValueError:
                 send_text_message(
                     to=from_number,
-                    body="Please type a valid time (e.g. “18:30” or “6:30pm”), or tap one of the buttons above."
+                    body=(
+                        "Sorry, I couldn’t parse that date. Please choose one of the listed dates "
+                        "or type a valid date in `DD-MM-YYYY`, e.g. `09-06-2025`."
+                    )
                 )
             return
 
-        # C) If free‐form “return to main menu” typed
-        if text_body in ["return to main menu", "main menu", "menu", "restart"]:
-            clear_user_state(prefix, from_number)
+        # E) collect_custom_time_text (user enters free-form time)
+        if step == "collect_custom_time_text":
+            user_time = text_body.strip().upper().replace(" ", "")
+            parsed_time = None
+
+            # Try parsing “HH:MM” (24-hour)
+            try:
+                parsed_time = datetime.strptime(user_time, "%H:%M").time()
+            except Exception:
+                # Try parsing “H:MMAM/PM” or “HH:MMAM/PM”
+                for fmt in ("%I:%M%p", "%I:%M%P"):
+                    try:
+                        parsed_time = datetime.strptime(user_time, fmt).time()
+                        break
+                    except Exception:
+                        continue
+
+            if parsed_time is None:
+                send_text_message(
+                    to=from_number,
+                    body="Sorry, I couldn’t parse that time. Please send `18:30` or `6:30pm`."
+                )
+                return
+
+            # If parsing succeeded:
+            state["appointment_time"] = parsed_time.strftime("%H:%M")
+            state["step"] = "collect_final_details"
+            set_user_state(prefix, from_number, state)
             send_text_message(
                 to=from_number,
-                body="Returning you to the main menu. Please tap 'Need help on Pest!' or 'Need help on Mold!'."
+                body=(
+                    "Great! Please reply in one sentence using **this format, separated by commas**:\n\n"
+                    "Vehicle Model, Vehicle Number, On-site Location\n"
+                    "For example:\n"
+                    "**Toyota Wish, SSS4444X, Tampines North Drive 1, Singapore 528559**"
+                )
             )
             return
 
-        # Otherwise, catch‐all
+        # F) collect_time_option: user typed a free-form time
+        if step == "collect_time_option":
+            user_time = text_body.strip().upper().replace(" ", "")
+            parsed_time = None
+            try:
+                parsed_time = datetime.strptime(user_time, "%H:%M").time()
+            except Exception:
+                for fmt in ("%I:%M%p", "%I:%M%P"):
+                    try:
+                        parsed_time = datetime.strptime(user_time, fmt).time()
+                        break
+                    except Exception:
+                        continue
+
+            if parsed_time:
+                # Accept it and move to final details
+                state["appointment_time"] = parsed_time.strftime("%H:%M")
+                state["step"] = "collect_final_details"
+                set_user_state(prefix, from_number, state)
+                send_text_message(
+                    to=from_number,
+                    body=(
+                        "Great! Please reply in one sentence using **this format, separated by commas**:\n\n"
+                        "Vehicle Model, Vehicle Number, On-site Location\n"
+                        "For example:\n"
+                        "**Toyota Wish, SSS4444X, Tampines North Drive 1, Singapore 528559**"
+                    )
+                )
+                return
+            else:
+                # If parsing fails, re-prompt time selection
+                send_text_message(
+                    to=from_number,
+                    body="Sorry, I couldn’t parse that time. Please type something like `18:30` or `6:30pm`, or tap one of the buttons."
+                )
+                return
+
+        # G) collect_final_details (single comma-separated line)
+        if step == "collect_final_details":
+            parts = [p.strip() for p in text_body.split(",")]
+            if len(parts) != 3:
+                send_text_message(
+                    to=from_number,
+                    body=(
+                        "Sorry, I couldn’t parse that.  \n"
+                        "Please reply in one sentence using **this format, separated by commas**:\n\n"
+                        "Vehicle Model, Vehicle Number, On-site Location\n"
+                        "For example:\n"
+                        "**Toyota Wish, SSS4444X, Tampines North Drive 1, Singapore 528559**"
+                    )
+                )
+                return
+
+            vehicle_model   = parts[0]
+            vehicle_number  = parts[1]
+            parking_address = parts[2]
+
+            state["vehicle_model"]   = vehicle_model
+            state["vehicle_number"]  = vehicle_number
+            state["parking_address"] = parking_address
+
+            # Fetch needed fields from state
+            pest_encountered = state.get("pest_type", "N/A")
+            total_quote = state.get("computed_quote", "N/A")
+            appointment_date = state.get("appointment_date", "")
+            appointment_time = state.get("appointment_time", "")
+
+            # Clear Redis state now that we have all info
+            clear_user_state(prefix, from_number)
+
+            # Send confirmation back to the customer with full summary
+            send_text_message(
+                to=from_number,
+                body=(
+                    "Thank you! Your appointment request has been received.\n\n"
+                    "Details provided:\n\n"
+                    f"• Pest Encounter: {pest_encountered}\n"
+                    f"• Estimated Quote: ${total_quote}\n"
+                    f"• Date: {appointment_date}\n"
+                    f"• Time: {appointment_time}\n"
+                    f"• Vehicle Model: {vehicle_model}\n"
+                    f"• Vehicle Number: {vehicle_number}\n"
+                    f"• Parking Address: {parking_address}\n\n"
+                    "We're connecting you to a live agent now. Meanwhile, you may review our Car Fumigation FAQ:" 
+                )
+            )
+            # Show FAQ for any last-minute questions
+            send_car_fumigation_faq(
+                to=from_number,
+                phone_number_id=os.getenv("PHONE_NUMBER_ID")
+            )
+
+            # Alert internal team with all details
+            alert_body = (
+                "🚨 New Car Fumigation Booking 🚨\n\n"
+                f"Client Phone Number: +{from_number}\n"
+                f"Pest Encountered: {pest_encountered}\n"
+                f"Total Estimated Quote: ${total_quote}\n"
+                f"Date/Time: {appointment_date} {appointment_time}\n"
+                f"Vehicle Model: {vehicle_model}\n"
+                f"Vehicle Number: {vehicle_number}\n"
+                f"Parking Address: {parking_address}"
+            )
+            for admin in ALERT_NUMBERS:
+                send_text_message(to=admin, body=alert_body)
+
+            return
+
+        # H) any other text outside expected steps
         send_text_message(
             to=from_number,
-            body="Sorry, I didn’t understand that. Please use the buttons or type “return to main menu”."
+            body="Sorry, I didn’t understand that. Type 'reset' to start over."
         )
         return
 
-    # ─── 5) Fallback for any unmatched case ───────────────────────────────
-    print(f"[DEBUG] handle_car_fumigation_flow: unsupported msg_type='{msg_type}', step='{step}' from {from_number}.")
+    # ----------------------------------------------------------------
+    # 5) Fallback for any other payload types
+    # ----------------------------------------------------------------
+    print(f"[DEBUG] handle_car_fumigation_flow: Unsupported msg_type='{msg_type}'")
     send_text_message(
         to=from_number,
-        body="Sorry, I can’t handle that type of message right now. Type “reset” to start over."
+        body="Sorry, I can’t handle that type of message. Type 'reset' to start over."
     )
-    clear_user_state(prefix, from_number)
-
+    return

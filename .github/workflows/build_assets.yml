@@ -6,46 +6,46 @@ on:
       - develop
 
 jobs:
-  build_assets:
+  build-assets:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
         with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          node-version: '18'
 
-      - name: Install Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential libssl-dev libreadline-dev zlib1g-dev libpq-dev \
-                                   nodejs npm postgresql-client curl
-          npm install -g yarn
-
-      - name: Set up Ruby and Bundler
+      - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '3.1'
-          bundler-cache: true
+          ruby-version: 3.1.7
 
-      - name: Install JavaScript dependencies (Yarn)
+      - name: Install system dependencies
         run: |
-          yarn install --network-timeout 600000 --network-concurrency 1
+          sudo apt update
+          sudo apt install -y build-essential libvips libpq-dev
 
-      - name: Precompile Rails assets
+      - name: Install Yarn
         run: |
-          export RAILS_ENV=production
-          bundle exec rails assets:precompile
+          npm install -g yarn
 
-      - name: Commit and push compiled assets
+      - name: Install JS packages
+        run: yarn install --frozen-lockfile
+
+      - name: Install Ruby gems
+        run: bundle install
+
+      - name: Precompile assets
+        run: bundle exec rails assets:precompile
+
+      - name: Commit precompiled assets
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add public/packs public/dist app/assets/builds || true
-          if ! git diff --cached --quiet; then
-            git commit -m "ci: add precompiled assets via GitHub Actions [skip ci]"
-            git push origin HEAD:develop
-          else
-            echo "No asset changes to commit."
-          fi
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add public/packs
+          git commit -m "chore: auto-compiled assets [skip ci]" || echo "No changes to commit"
+          git push
+

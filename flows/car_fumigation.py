@@ -29,7 +29,7 @@ def send_main_menu(to: str, phone_number_id: str):
         template_name="main_menu_v2",
         template_params=[greeting_name]
     )
-    print(f"[DEBUG] send_main_menu → 360dialog response: {resp}")
+    print(f"[DEBUG] send_main_menu → 1MSG response: {resp}")
 
 
 # =====================================================================
@@ -65,7 +65,7 @@ def send_pest_control_list(to: str, phone_number_id: str):
         }
     }
     resp = send_interactive_message(payload)
-    print(f"[DEBUG] send_pest_control_list → 360dialog response: {resp}")
+    print(f"[DEBUG] send_pest_control_list → 1MSG response: {resp}")
 
 
 # =====================================================================
@@ -77,7 +77,7 @@ def send_car_fum_menu(to: str, phone_number_id: str):
         template_name="car_fum_menu",
         template_params=[]
     )
-    print(f"[DEBUG] send_car_fum_menu → 360dialog response: {resp}")
+    print(f"[DEBUG] send_car_fum_menu → 1MSG response: {resp}")
 
 
 # =====================================================================
@@ -89,7 +89,7 @@ def send_car_fum_quote_options(to: str, phone_number_id: str):
         template_name="car_fum_quote_options",
         template_params=[]
     )
-    print(f"[DEBUG] send_car_fum_quote_options → 360dialog response: {resp}")
+    print(f"[DEBUG] send_car_fum_quote_options → 1MSG response: {resp}")
 
 
 # =====================================================================
@@ -122,7 +122,7 @@ def send_pest_type_list(to: str, phone_number_id: str):
         }
     }
     resp = send_interactive_message(payload)
-    print(f"[DEBUG] send_pest_type_list → 360dialog response: {resp}")
+    print(f"[DEBUG] send_pest_type_list → 1MSG response: {resp}")
 
 
 # =====================================================================
@@ -157,7 +157,7 @@ def send_vehicle_type_list(to: str, phone_number_id: str):
         }
     }
     resp = send_interactive_message(payload)
-    print(f"[DEBUG] send_vehicle_type_list → 360dialog response: {resp}")
+    print(f"[DEBUG] send_vehicle_type_list → 1MSG response: {resp}")
 
 
 # =====================================================================
@@ -193,7 +193,7 @@ def send_cfadditionalfee_prompt(to: str, phone_number_id: str):
         }
     }
     resp = send_interactive_message(payload)
-    print(f"[DEBUG] send_cfadditionalfee_prompt → 360dialog response: {resp}")
+    print(f"[DEBUG] send_cfadditionalfee_prompt → 1MSG response: {resp}")
 
 
 # =====================================================================
@@ -242,7 +242,7 @@ def send_upcoming_dates_list(to: str, phone_number_id: str):
         }
     }
     resp = send_interactive_message(payload)
-    print(f"[DEBUG] send_upcoming_dates_list → 360dialog response: {resp}")
+    print(f"[DEBUG] send_upcoming_dates_list → 1MSG response: {resp}")
 
 
 # =====================================================================
@@ -278,7 +278,7 @@ def send_location_selection(to: str, phone_number_id: str):
         }
     }
     resp = send_interactive_message(payload)
-    print(f"[DEBUG] send_location_selection → 360dialog response: {resp}")
+    print(f"[DEBUG] send_location_selection → 1MSG response: {resp}")
 
 
 # =====================================================================
@@ -304,7 +304,7 @@ def send_day_selection_prompt(to: str, phone_number_id: str):
         }
     }
     resp = send_interactive_message(payload)
-    print(f"[DEBUG] send_day_selection_prompt → {resp}")
+    print(f"[DEBUG] send_day_selection_prompt → 1MSG response: {resp}")
 
 
 # =====================================================================
@@ -346,7 +346,7 @@ def send_time_selection_prompt(to: str, phone_number_id: str, chosen_date: str):
         }
     }
     resp = send_interactive_message(payload)
-    print(f"[DEBUG] send_time_selection_prompt → {resp}")
+    print(f"[DEBUG] send_time_selection_prompt → 1MSG response: {resp}")
 
 
 # =====================================================================
@@ -425,7 +425,7 @@ def send_quote_summary(to: str, phone_number_id: str):
         }
     }
     resp = send_interactive_message(payload)
-    print(f"[DEBUG] send_quote_summary → 360dialog response: {resp}")
+    print(f"[DEBUG] send_quote_summary → 1MSG response: {resp}")
 
 
 # =====================================================================
@@ -458,7 +458,8 @@ def send_car_fumigation_faq(to, phone_number_id: str):
             }
         }
     }
-    send_interactive_message(payload)
+    resp = send_interactive_message(payload)
+    print(f"[DEBUG] send_car_fumigation_faq → 1MSG response: {resp}")
 
 
 def process_car_fumigation_faq_response(to: str, faq_id: str):

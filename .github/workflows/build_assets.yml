@@ -13,14 +13,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Set up Node.js 23 manually
-        run: |
-          curl -fsSL https://deb.nodesource.com/setup_23.x | sudo -E bash -
-          sudo apt-get install -y nodejs
-          node -v
-          npm -v
+      - name: Set up Node.js 23.x
+        uses: actions/setup-node@v3
+        with:
+          node-version: '23.x'
+          check-latest: true
 
-      - name: Set up Ruby
+      - name: Set up Ruby 3.4.4
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: 3.4.4

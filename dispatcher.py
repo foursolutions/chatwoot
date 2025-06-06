@@ -2,210 +2,145 @@
 
 import os
 import json
+import redis
 from flask import Flask, request, Response
 
 from helpers import (
-    get_user_state,
-    set_user_state,
-    clear_user_state,
+    send_text_message,
     send_template_message,
-    send_text_message
+    send_list_message,
+    API_KEY_1MSG,
+    BASE_URL_1MSG,
+    NAMESPACE_1MSG,
+    PHONE_NUMBER_ID,
+    MAIN_MENU_TEMPLATE
 )
-
-from flows.car_fumigation import (
-    handle_car_fumigation_flow,
-    send_main_menu as send_car_main_menu
-)
+from flows.car_fumigation import handle_car_fumigation_flow
 from flows.bedbug import handle_bedbug_flow
 from flows.mold import handle_mold_flow
 
 app = Flask(__name__)
 
-@app.route("/webhook", methods=["POST"])
-def incoming_webhook() -> Response:
-    """
-    Entry point for every incoming webhook from 1msg. We inspect
-    request.json, figure out the phone number, body text or button,
-    and route into the appropriate flow (car, bedbug, mold) or
-    show the main menu if nothing matches.
-    """
-    data = request.get_json(force=True)
-    # Always print the raw incoming JSON for debugging:
-    print(">>>> RAW INCOMING JSON:", json.dumps(data, indent=2))
+# ─── Redis setup (for user-state storage) ──────────────────────────
+REDIS_URL = os.getenv("REDIS_URL", "")
+r = redis.from_url(REDIS_URL, decode_responses=True)
 
-    # 1msg always wraps your incoming messages under "messages": []
-    # It may contain "messages" or "ack" or "status", etc. We only
-    # care about "messages" when a user actually sends text / taps a button.
-    messages = data.get("messages") or []
+
+# ─── Helpers to get/set user state in Redis ─────────────────
+def set_user_state(flow_prefix: str, user: str, state: dict):
+    r.hset(f"{flow_prefix}:{user}", mapping=state)
+
+def get_user_state(flow_prefix: str, user: str) -> dict:
+    raw = r.hgetall(f"{flow_prefix}:{user}")
+    return raw if raw else {}
+
+def clear_user_state(flow_prefix: str, user: str):
+    r.delete(f"{flow_prefix}:{user}")
+
+
+# ─── Entry Point for WhatsApp Webhook ───────────────────────────────────────
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    data = request.get_json()
+    # 1msg sends {"messages": [...], "instanceId": "..."}
+    messages = data.get("messages", [])
     if not messages:
-        # e.g. an ACK/status event; ignore
         return Response(status=200)
 
-    msg = messages[0]
-    phone_with_suffix = msg.get("chatId", "")
-    # chatId always looks like "6591234567@c.us"
-    phone_no = phone_with_suffix.replace("@c.us", "")
+    message = messages[0]
+    msg_type = message.get("type")    # "chat", "button", or "interactive"
+    body_text = message.get("body", "").strip().lower()
+    from_number = message.get("author", message.get("from", ""))  # e.g. "6587788080@c.us"
+    user_digits = from_number.split("@")[0]  # e.g. "6587788080"
 
-    # Extract what kind of message this is:
-    msg_type = msg.get("type")  # "chat", "button", "interactive", etc.
+    # ─── 1) RESET / unrecognized-text branch ──────────────────────────────────
+    if body_text == "reset" or msg_type == "chat" and body_text not in (
+        "need help on pest!", "need help on mold!", "live human"
+    ):
+        clear_user_state("car", user_digits)
+        clear_user_state("bed", user_digits)
+        clear_user_state("mold", user_digits)
 
-    # If this is a text message:
-    if msg_type == "chat":
-        body_text = msg.get("body", "").strip().lower()
-
-        # 1) If user typed exactly "reset", clear all state & show main menu
-        if body_text == "reset":
-            print(f"[DEBUG] RESET branch hit (body_text == 'reset'), will send main_menu_v2")
-            clear_user_state("car", phone_no)
-            clear_user_state("bedbug", phone_no)
-            clear_user_state("mold", phone_no)
-
-            # Send the “main_menu_v2” template:
-            resp = send_template_message(
-                to=phone_no,
-                template_name="main_menu_v2",
-                template_params=["there"]
-            )
-            print(f"[DEBUG] send_template_message(main_menu_v2) → {resp}")
-            return Response(status=200)
-
-        # 2) Otherwise, check if the user is currently inside one of our flows:
-        user_flow_car    = get_user_state("car", phone_no)
-        user_flow_bedbug = get_user_state("bedbug", phone_no)
-        user_flow_mold   = get_user_state("mold", phone_no)
-
-        if user_flow_car is not None:
-            # Pass control to the Car Fumigation flow
-            print(f"[DEBUG] Routing into car_fumigation: text='{body_text}'")
-            return handle_car_fumigation_flow(
-                to_chat_id=phone_with_suffix,
-                message=msg,
-                user_state=user_flow_car,
-                api_key=os.getenv("WHATSAPP_TOKEN", ""),
-                base_url=os.getenv("BASE_URL", "")
-            )
-
-        if user_flow_bedbug is not None:
-            print(f"[DEBUG] Routing into bedbug flow: text='{body_text}'")
-            return handle_bedbug_flow(
-                from_number=phone_with_suffix,
-                message=msg,
-                user_state=user_flow_bedbug
-            )
-
-        if user_flow_mold is not None:
-            print(f"[DEBUG] Routing into mold flow: text='{body_text}'")
-            return handle_mold_flow(
-                from_number=phone_with_suffix,
-                message=msg,
-                user_state=user_flow_mold
-            )
-
-        # 3) Fallback: No flow matched, no “reset.” Just show main menu again:
-        print(f"[DEBUG] FALLBACK chat (“{body_text}”), resending main_menu_v2")
+        # Send the main menu template again
         resp = send_template_message(
-            to=phone_no,
-            template_name="main_menu_v2",
+            to=user_digits,
+            template_name=MAIN_MENU_TEMPLATE,
             template_params=["there"]
         )
-        print(f"[DEBUG] send_template_message(main_menu_v2) → {resp}")
+        print(f"[DEBUG] RESET branch hit (body_text == 'reset'), will send main_menu_v2 → {resp}")
         return Response(status=200)
 
-    # If the user tapped a “Button” (type == "button"), or an interactive reply,
-    # we treat it exactly like they tapped one of our menu options. We look at “payload.”
-    if msg_type in ["button", "interactive"]:
-        # Extract the button payload:
-        payload = ""
-        # Standard “button” payload:
-        if msg.get("type") == "button":
-            payload = msg["button"].get("payload", "")
-        # Or interactive.button_reply:
-        elif msg.get("type") == "interactive" and msg["interactive"].get("type") == "button_reply":
-            payload = msg["interactive"]["button_reply"].get("id", "")
+    # ─── 2) BUTTON-press logic: Gateway to each flow ─────────────────────────
+    #    1msg now puts button taps into `msg_type == "button"`, with `body` == the button text.
+    if msg_type == "button":
+        button_text = message.get("body", "").strip().lower()
 
-        payload_lower = payload.lower()
-        print(f"[DEBUG] INCOMING BUTTON/INTERACTIVE payload='{payload_lower}' from={phone_no}")
-
-        # 1) Did they tap “Need help on Pest!”? That should start the car-fumigation flow.
-        if payload_lower == "need help on pest!":
-            clear_user_state("car", phone_no)
-            initial_state = {"step": "select_pest_type"}
-            set_user_state("car", phone_no, initial_state)
-
-            # Immediately send the “Pest Control” list:
+        if button_text == "need help on pest!":
+            state = {}
+            set_user_state("car", user_digits, {"step": "start"})
             return handle_car_fumigation_flow(
-                to_chat_id=phone_with_suffix,
-                message=msg,
-                user_state=initial_state,
-                api_key=os.getenv("WHATSAPP_TOKEN", ""),
-                base_url=os.getenv("BASE_URL", "")
+                to_chat_id=user_digits,
+                message=message,
+                api_key=API_KEY_1MSG,
+                base_url=BASE_URL_1MSG
             )
 
-        # 2) Did they tap “Need help on Mold!”? That should start the mold flow.
-        if payload_lower == "need help on mold!":
-            clear_user_state("mold", phone_no)
-            new_state = {"step": "mold_option", "affected_areas": []}
-            set_user_state("mold", phone_no, new_state)
-
+        elif button_text == "need help on mold!":
+            state = {"step": "mold_option", "affected_areas": []}
+            set_user_state("mold", user_digits, state)
             return handle_mold_flow(
-                from_number=phone_with_suffix,
-                message=msg,
-                user_state=new_state
+                from_number=user_digits,
+                message=message,
+                user_state=state
             )
 
-        # 3) Did they tap “Live Human”? (We’ll just send a polite text.)
-        if payload_lower == "live human":
+        elif button_text == "live human":
+            # If you want a “live human” fallback, just send a notice:
             send_text_message({
-                "to": phone_no,
+                "to": user_digits,
                 "type": "text",
                 "messaging_product": "whatsapp",
-                "text": {"body": "Sure—connecting you to a live agent now. Please wait…"}
+                "text": {"body": "Please hold on, a human will join shortly…"}
             })
             return Response(status=200)
 
-        # 4) Otherwise, maybe they’re already in the bedbug flow?
-        user_flow_car    = get_user_state("car", phone_no)
-        user_flow_bedbug = get_user_state("bedbug", phone_no)
-        user_flow_mold   = get_user_state("mold", phone_no)
-
-        if user_flow_car is not None:
-            print(f"[DEBUG] BUTTON → Routing into car_fumigation_flow (payload={payload_lower})")
-            return handle_car_fumigation_flow(
-                to_chat_id=phone_with_suffix,
-                message=msg,
-                user_state=user_flow_car,
-                api_key=os.getenv("WHATSAPP_TOKEN", ""),
-                base_url=os.getenv("BASE_URL", "")
-            )
-
-        if user_flow_bedbug is not None:
-            print(f"[DEBUG] BUTTON → Routing into bedbug flow (payload={payload_lower})")
-            return handle_bedbug_flow(
-                from_number=phone_with_suffix,
-                message=msg,
-                user_state=user_flow_bedbug
-            )
-
-        if user_flow_mold is not None:
-            print(f"[DEBUG] BUTTON → Routing into mold flow (payload={payload_lower})")
-            return handle_mold_flow(
-                from_number=phone_with_suffix,
-                message=msg,
-                user_state=user_flow_mold
-            )
-
-        # 5) If none of the above matched, just re-send the main menu:
-        print(f"[DEBUG] BUTTON fallback (payload={payload_lower}), re-sending main_menu_v2")
-        resp = send_template_message(
-            to=phone_no,
-            template_name="main_menu_v2",
-            template_params=["there"]
+    # ─── 3) ROUTE INTO car_fumigation_flow if user is already mid-flow ─────────
+    car_state = get_user_state("car", user_digits)
+    if car_state:
+        return handle_car_fumigation_flow(
+            to_chat_id=user_digits,
+            message=message,
+            api_key=API_KEY_1MSG,
+            base_url=BASE_URL_1MSG
         )
-        print(f"[DEBUG] send_template_message(main_menu_v2) → {resp}")
-        return Response(status=200)
 
-    # Any other message types (read receipts, location events, etc.) → ignore
+    # ─── 4) ROUTE INTO bedbug_flow if user is already mid-flow ───────────────
+    bed_state = get_user_state("bed", user_digits)
+    if bed_state:
+        return handle_bedbug_flow(
+            from_number=user_digits,
+            message=message,
+            user_state=bed_state
+        )
+
+    # ─── 5) ROUTE INTO mold_flow if user is already mid-flow ────────────────
+    mold_state = get_user_state("mold", user_digits)
+    if mold_state:
+        return handle_mold_flow(
+            from_number=user_digits,
+            message=message,
+            user_state=mold_state
+        )
+
+    # ─── 6) FALLBACK: If none of the above matched ───────────────────────────
+    send_text_message({
+        "to": user_digits,
+        "type": "text",
+        "messaging_product": "whatsapp",
+        "text": { "body": "Sorry, I didn’t understand that. Type 'reset' to start over." }
+    })
     return Response(status=200)
 
+
 if __name__ == "__main__":
-    app.run(debug=True, port=int(os.getenv("PORT", 5000)))
+    app.run(debug=True)

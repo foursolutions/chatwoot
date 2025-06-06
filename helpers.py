@@ -1,9 +1,10 @@
 # helpers.py
 
 import os
+import redis
 import requests
 
-# ─── Read from your Heroku Config Vars ──────────────────
+# ─── 1msg / SendMessage / SendTemplate / SendList Config ─────────────────────
 API_KEY_1MSG    = os.getenv("1MSG_API_KEY", "").strip()
 BASE_URL_1MSG   = os.getenv("1MSG_BASE_URL", "").rstrip("/")      # e.g. "https://api.1msg.io/VAN388218473"
 NAMESPACE_1MSG  = os.getenv("1MSG_NAMESPACE", "").strip()         # e.g. "94d66366_9ec1_43a3_a84c_46039bd33ef5"
@@ -11,16 +12,42 @@ LANG_CODE_1MSG  = os.getenv("1MSG_LANG_CODE", "en").strip()       # e.g. "en"
 MAIN_MENU_TEMPLATE = os.getenv("MAIN_MENU_TEMPLATE", "main_menu_v2").strip()
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID", "").strip()        # e.g. "66681799847695"
 
-# ─── 1) send_text_message: wraps /sendMessage for plain text ──
+# ─── Redis Setup for User‐State ──────────────────────────────────────────────
+REDIS_URL = os.getenv("REDIS_URL", "")
+redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+
+def get_user_state(flow_prefix: str, user: str) -> dict:
+    """
+    Fetches a Redis hash at key "<flow_prefix>:<user>".
+    Returns a normal dict if present, else {}.
+    """
+    raw = redis_client.hgetall(f"{flow_prefix}:{user}")
+    return raw if raw else {}
+
+def set_user_state(flow_prefix: str, user: str, state: dict):
+    """
+    Overwrites (or creates) the Redis hash at "<flow_prefix>:<user>".
+    Expects `state` to be a simple dict of string→string.
+    """
+    redis_client.hset(f"{flow_prefix}:{user}", mapping=state)
+
+def clear_user_state(flow_prefix: str, user: str):
+    """
+    Deletes the Redis key "<flow_prefix>:<user>" entirely.
+    """
+    redis_client.delete(f"{flow_prefix}:{user}")
+
+
+# ─── 1) send_text_message: wrap 1msg /sendMessage ───────────────────────────
 def send_text_message(message_payload: dict) -> dict:
     """
     Sends a plain-text WhatsApp message via 1msg's /sendMessage endpoint.
-    Expect message_payload to look like:
+    Example payload:
       {
         "to": "6591234567",
         "type": "text",
         "messaging_product": "whatsapp",
-        "text": { "body": "Your text here" }
+        "text": { "body": "Hello world" }
       }
     """
     url = f"{BASE_URL_1MSG}/sendMessage"
@@ -35,7 +62,7 @@ def send_text_message(message_payload: dict) -> dict:
         return {"error": f"non-JSON response: {resp.text}"}
 
 
-# ─── 2) send_template_message: wraps /sendTemplate ─────────────
+# ─── 2) send_template_message: wrap 1msg /sendTemplate ──────────────────────
 def send_template_message(
     to: str,
     template_name: str,
@@ -46,14 +73,14 @@ def send_template_message(
     """
     Sends a pre-approved WhatsApp Template via 1msg's /sendTemplate endpoint.
 
-    to             = phone number (digits only, e.g. "6591234567")
-    template_name  = the exact name of the approved template, e.g. "main_menu_v2"
-    template_params= a list of body parameters, e.g. ["Solvia"] if your template needs 1 body param
+      to             = phone number (digits only; e.g. "6591234567")
+      template_name  = e.g. "main_menu_v2"
+      template_params= e.g. ["Solvia"] if your template has one body parameter
     """
     if template_params is None:
         template_params = []
 
-    # Build the 'params' structure properly with a list comprehension:
+    # Build the "params" block:
     params_body = {
         "type": "body",
         "parameters": [
@@ -82,7 +109,7 @@ def send_template_message(
         return {"error": f"non-JSON response: {resp.text}"}
 
 
-# ─── 3) send_list_message: wraps /sendList ───────────────────────
+# ─── 3) send_list_message: wrap 1msg /sendList ──────────────────────────────
 def send_list_message(
     to: str,
     body: str,
@@ -94,27 +121,20 @@ def send_list_message(
     """
     Sends an interactive LIST via 1msg's /sendList endpoint.
 
-    to           = phone number (digits only)
-    body         = the 'body.text' field for the list
-    header       = header text (or empty string if none)
-    footer       = footer text (or empty string if none)
-    action_title = the 'action.button' label, e.g. "Select Service"
-    sections     = a list of { "title": "...", "rows": [ {"id": "...","title":"...","description":"..."} , ... ] }
-
-    Example 'sections' argument:
-      [
-        {
-          "title": "Common Pest Issues",
-          "rows": [
-            {
-              "id": "car_fumigation",
-              "title": "Car Fumigation 🚗",
-              "description": "On-site fumigation & fogging"
-            },
-            ...
-          ]
-        }
-      ]
+      to           = phone number (digits only)
+      body         = the "body.text" field
+      header       = header text (or "" if none)
+      footer       = footer text (or "" if none)
+      action_title = value for "action.button"
+      sections     = [
+                        {
+                          "title": "...",
+                          "rows": [
+                            {"id":"...","title":"...","description":"..."},
+                            ...
+                          ]
+                        }
+                      ]
     """
     url = f"{BASE_URL_1MSG}/sendList"
     headers = {
@@ -135,4 +155,3 @@ def send_list_message(
         return resp.json()
     except ValueError:
         return {"error": f"non-JSON response: {resp.text}"}
-

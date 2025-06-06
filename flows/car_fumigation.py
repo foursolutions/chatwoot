@@ -528,14 +528,23 @@ def handle_car_fumigation_flow(from_number: str, message: dict, user_state: dict
 
     # ─── Helper to extract quick-reply BUTTON payload ───
     def extract_button_payload(msg: dict) -> str:
+        """
+        1MSG “button” → top-level "body"
+        1MSG “interactive” with type=="button_reply" → nested msg["interactive"]["button_reply"]["id"]
+        """
         msg_type_inner = msg.get("type", "")
-        # 1MSG “button” → top-level "body"
+        # A) If 1MSG delivered a quick‐reply, its type is literally "button",
+        #    and the reply text is in msg["body"].
         if msg_type_inner == "button":
             return msg.get("body", "").strip()
-        # 360dialog “button_reply” → nested msg["button"]["payload"]
-        if msg_type_inner == "button_reply" and "button" in msg:
-            return msg["button"].get("payload", "").strip()
+
+        # B) If 1MSG delivered a template‐based or list‐based interactive button,
+        #    then msg["type"] == "interactive" and interactive.type == "button_reply".
+        if msg_type_inner == "interactive" and msg.get("interactive", {}).get("type") == "button_reply":
+            return msg["interactive"]["button_reply"].get("id", "").strip()
+
         return ""
+
 
     # Retrieve or initialize state
     state = user_state or {}

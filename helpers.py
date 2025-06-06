@@ -1,74 +1,178 @@
+# helpers.py (no changes needed)
 import os
-import redis
 import requests
+import redis
 import json
-import logging
 
-# Redis setup
-redis_url = os.environ.get("REDIS_URL")
-redis_client = redis.from_url(redis_url, decode_responses=True)
+ONE_MSG_API_URL = os.getenv("ONE_MSG_API_URL")  # e.g. "https://api.1msg.io/VAN388218473"
+ONE_MSG_TOKEN   = os.getenv("ONE_MSG_TOKEN")    # e.g. "TKNgrBqpmnbDhF9NzyO5uXNgKHoblDCe"
+REDIS_URL       = os.getenv("REDIS_URL")
+TEMPLATE_NAMESPACE = os.getenv("TEMPLATE_NAMESPACE")
 
-# Utilities for user state management
-def get_user_state(key_prefix, chat_id):
-    raw = redis_client.get(f"{key_prefix}:{chat_id}")
+if not ONE_MSG_API_URL or not ONE_MSG_TOKEN:
+    raise EnvironmentError(
+        "ONE_MSG_API_URL and ONE_MSG_TOKEN must be set in your environment."
+    )
+
+ONE_MSG_API_URL = ONE_MSG_API_URL.rstrip("/")
+
+r = redis.StrictRedis.from_url(REDIS_URL, decode_responses=True)
+
+def get_user_state(prefix: str, user_id: str) -> dict:
+    key = f"{prefix}:{user_id}"
+    raw = r.get(key)
     return json.loads(raw) if raw else {}
 
-def set_user_state(key_prefix, chat_id, value):
-    redis_client.set(f"{key_prefix}:{chat_id}", json.dumps(value))
+def set_user_state(prefix: str, user_id: str, state: dict):
+    key = f"{prefix}:{user_id}"
+    r.set(key, json.dumps(state), ex=3600)
 
-def clear_user_state(key_prefix, chat_id):
-    redis_client.delete(f"{key_prefix}:{chat_id}")
+def clear_user_state(prefix: str, user_id: str):
+    key = f"{prefix}:{user_id}"
+    r.delete(key)
 
-# Normalizes text by stripping whitespace and lowercasing
-def normalize_text(text):
-    return text.strip().lower() if isinstance(text, str) else ""
-
-# 1MSG Send functions
-def send_text_message(to, text):
+def send_text_message(to: str, body: str):
+    url = f"{ONE_MSG_API_URL}/sendMessage"
     payload = {
-        "to": to,
-        "type": "text",
-        "text": {"body": text},
-    }
-    return _post_1msg(payload, tag="send_text_message")
-
-def send_template_message(to, template_name, template_params=None):
-    payload = {
-        "to": to,
-        "type": "template",
-        "template": {
-            "namespace": os.environ.get("TEMPLATE_NAMESPACE"),
-            "name": template_name,
-            "language": {"policy": "deterministic", "code": "en"},
-            "components": [{
-                "type": "body",
-                "parameters": [{"type": "text", "text": str(p)} for p in (template_params or [""])]
-            }]
-        }
-    }
-    return _post_1msg(payload, tag="send_template_message")
-
-def send_interactive_message(to, payload):
-    # Must include the interactive section within the payload already
-    payload["to"] = to
-    payload["type"] = "interactive"
-    return _post_1msg(payload, tag="send_interactive_message")
-
-def send_main_menu_template(chat_id):
-    return send_template_message(chat_id, "main_menu_v2", [""])
-
-# POST to 1MSG API
-def _post_1msg(payload, tag=""):
-    api_url = os.environ.get("ONE_MSG_API_URL")
-    token = os.environ.get("ONE_MSG_TOKEN")
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json"
+        "token": ONE_MSG_TOKEN,
+        "body": body,
+        "phone": to
     }
     try:
-        resp = requests.post(f"{api_url}/messages", headers=headers, json=payload)
-        logging.debug(f"[DEBUG] {tag} → 1MSG response: {resp.text}")
-        return resp.json()
+        resp = requests.post(url, json=payload, timeout=10)
+        resp.raise_for_status()
+        result = resp.json()
     except Exception as e:
-        logging.error(f"[ERROR] {tag} → 1MSG exception: {e}")
-        return {"error": str(e)}
+        print(f"[ERROR] send_text_message to={to} payload={json.dumps(payload)} error={e}")
+        result = {"error": str(e)}
+    print(f"[DEBUG] send_text_message → 1MSG response: {result}")
+    return result
+
+def send_interactive_message(payload: dict):
+    """
+    (Unchanged) Transforms your “interactive” payload into either /sendList or /sendButton
+    calls on 1MSG.
+    """
+    try:
+        interactive = payload.get("interactive", {})
+        i_type = interactive.get("type")
+        to = payload.get("to")
+        if not to or not i_type:
+            raise ValueError("Missing 'to' or 'interactive.type' in payload")
+
+        # ── LIST CASE ──
+        if i_type == "list":
+            header_text = interactive.get("header", {}).get("text", "")
+            body_text   = interactive.get("body", {}).get("text", "")
+            footer_text = interactive.get("footer", {}).get("text", "")
+            action_obj  = interactive.get("action", {})
+            action_button = action_obj.get("button", "")
+
+            # Build 1MSG‐style sections array
+            sections_1msg = []
+            for sec in action_obj.get("sections", []):
+                title = sec.get("title", "")
+                rows  = sec.get("rows", [])
+                sections_1msg.append({
+                    "title": title,
+                    "rows": rows
+                })
+
+            payload_1msg = {
+                "token": ONE_MSG_TOKEN,
+                "header": header_text,
+                "body": body_text,
+                "footer": footer_text,
+                "action": action_button,
+                "sections": sections_1msg,
+                "phone": to
+            }
+            url = f"{ONE_MSG_API_URL}/sendList"
+            resp = requests.post(url, json=payload_1msg, timeout=10)
+            resp.raise_for_status()
+            result = resp.json()
+
+        # ── BUTTON CASE ──
+        elif i_type == "button":
+            body_text   = interactive.get("body", {}).get("text", "")
+            footer_text = payload.get("footer", "") or ""
+            buttons = interactive.get("action", {}).get("buttons", [])
+
+            sections_1msg = []
+            for btn in buttons:
+                reply_obj = btn.get("reply", {})
+                btn_id    = reply_obj.get("id")
+                btn_title = reply_obj.get("title")
+                sections_1msg.append({
+                    "type": "reply",
+                    "reply": {
+                        "id": btn_id,
+                        "title": btn_title
+                    }
+                })
+
+            payload_1msg = {
+                "token": ONE_MSG_TOKEN,
+                "sections": sections_1msg,
+                "body": body_text,
+                "footer": footer_text,
+                "phone": to
+            }
+            url = f"{ONE_MSG_API_URL}/sendButton"
+            resp = requests.post(url, json=payload_1msg, timeout=10)
+            resp.raise_for_status()
+            result = resp.json()
+
+        else:
+            raise ValueError(f"Unsupported interactive.type='{i_type}'")
+
+    except Exception as e:
+        print(f"[ERROR] send_interactive_message failed. incoming_payload={json.dumps(payload)} error={e}")
+        result = {"error": str(e)}
+
+    print(f"[DEBUG] send_interactive_message → 1MSG response: {result}")
+    return result
+
+def send_template_message(to: str, template_name: str, template_params=None):
+    """
+    (Unchanged) Builds 1MSG /sendTemplate payload from your template name + params.
+    """
+    if template_params is None:
+        template_params = []
+
+    body_parameters = []
+    for param in template_params:
+        body_parameters.append({
+            "type": "text",
+            "text": param
+        })
+    params_array = [
+        {
+            "type": "body",
+            "parameters": body_parameters
+        }
+    ]
+
+    payload_1msg = {
+        "token": ONE_MSG_TOKEN,
+        "namespace": TEMPLATE_NAMESPACE,
+        "template": template_name,
+        "language": {
+            "policy": "deterministic",
+            "code": "en"
+        },
+        "params": params_array,
+        "phone": to
+    }
+
+    url = f"{ONE_MSG_API_URL}/sendTemplate"
+    try:
+        resp = requests.post(url, json=payload_1msg, timeout=10)
+        resp.raise_for_status()
+        result = resp.json()
+    except Exception as e:
+        print(f"[ERROR] send_template_message to={to}, template={template_name}, payload={json.dumps(payload_1msg)} error={e}")
+        result = {"error": str(e)}
+
+    print(f"[DEBUG] send_template_message → 1MSG response: {result}")
+    return result

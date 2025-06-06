@@ -16,12 +16,12 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '23'
+          node-version: '20' # Compatible with Chatwoot (NOT 18 or 23)
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: 3.1.7
+          ruby-version: 3.4.4 # Match your Gemfile
 
       - name: Install system dependencies
         run: |
@@ -29,11 +29,10 @@ jobs:
           sudo apt install -y build-essential libvips libpq-dev
 
       - name: Install Yarn
-        run: |
-          npm install -g yarn
+        run: npm install -g yarn
 
       - name: Install JS packages
-        run: yarn install
+        run: yarn install --frozen-lockfile
 
       - name: Install Ruby gems
         run: bundle install
@@ -48,4 +47,3 @@ jobs:
           git add public/packs
           git commit -m "chore: auto-compiled assets [skip ci]" || echo "No changes to commit"
           git push
-

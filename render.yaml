@@ -2,18 +2,15 @@ services:
   - type: web
     name: chatwoot-web
     env: ruby
-    buildCommand: "./bin/render-build.sh"
-    startCommand: "bundle exec puma -C config/puma.rb"
     plan: starter
+    buildCommand: ./bin/render-build.sh
+    startCommand: bundle exec rails s -b 0.0.0.0 -p $PORT
     envVars:
-      - key: RAILS_ENV
-        value: production
       - key: DATABASE_URL
         fromDatabase:
           name: chatwoot-db
           property: connectionString
-      - key: REDIS_URL
-        fromService:
-          name: chatwoot-redis
-          type: redis
-          property: connectionString
+      - key: RAILS_ENV
+        value: production
+      - key: NODE_OPTIONS
+        value: --max_old_space_size=3584

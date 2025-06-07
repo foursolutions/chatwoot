@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 
-echo "ruby-3.2.2" > .ruby-version
+# Install missing JS deps manually
+yarn install --check-files
 
-rm -f yarn.lock
-
-yarn install --check-files || yarn install
-
+# Ensure Ruby gems are installed
 bundle install --without development test
 
+# Compile assets
 bundle exec rails assets:precompile

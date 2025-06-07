@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: chatwoot-web
+    env: ruby
+    buildCommand: "./bin/render-build.sh"
+    startCommand: "bundle exec puma -C config/puma.rb"
+    plan: starter
+    envVars:
+      - key: RAILS_ENV
+        value: production
+    rubyVersion: 3.2.2

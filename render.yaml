@@ -8,4 +8,12 @@ services:
     envVars:
       - key: RAILS_ENV
         value: production
-    rubyVersion: 3.2.2
+      - key: DATABASE_URL
+        fromDatabase:
+          name: chatwoot-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: chatwoot-redis
+          type: redis
+          property: connectionString

@@ -1,13 +1,9 @@
 #!/usr/bin/env bash
+set -o errexit
 
-# Fail fast on any error
-set -e
+# 1. Install JS dependencies and build assets
+yarn install --frozen-lockfile
+yarn build:production
 
-# Install JS deps manually
-yarn install --check-files
-
-# Install Ruby gems without development & test groups
-bundle install --without development test
-
-# Precompile frontend assets
-bundle exec rails assets:precompile
+# 2. Optionally remove server-related files if present (safety)
+rm -rf node_modules/.cache

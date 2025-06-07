@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 
-# Install missing JS deps manually
+# Fail fast on any error
+set -e
+
+# Install JS deps manually
 yarn install --check-files
 
-# Ensure Ruby gems are installed
+# Install Ruby gems without development & test groups
 bundle install --without development test
 
-# Compile assets
+# Precompile frontend assets
 bundle exec rails assets:precompile
